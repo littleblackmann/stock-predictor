@@ -344,6 +344,16 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.2.4",
+                "date": "2026-03-27",
+                "changes": [
+                    "修正更新後程式未自動重啟、檔案未覆蓋的問題",
+                    "修正版本號顯示為 v0.0.0 的問題",
+                    "「檢查更新」按鈕現在直接觸發更新流程",
+                    "更新時顯示明顯的進度對話框（含下載百分比）",
+                ],
+            },
+            {
                 "version": "v1.2.0",
                 "date": "2026-03-27",
                 "changes": [
@@ -398,7 +408,7 @@ class SettingsDialog(QDialog):
         return tab
 
     def _on_check_update(self):
-        """手動檢查更新"""
+        """手動檢查更新 — 發現新版本時直接觸發更新"""
         self.btn_check_update.setEnabled(False)
         self.btn_check_update.setText("檢查中...")
         self.update_status_label.setText("")
@@ -408,12 +418,17 @@ class SettingsDialog(QDialog):
             result = check_for_update()
             if result:
                 self.update_status_label.setText(
-                    f"發現新版本 v{result['version']}！請關閉設定視窗後，"
-                    "系統會自動提示更新。"
+                    f"發現新版本 v{result['version']}！"
                 )
                 self.update_status_label.setStyleSheet(
                     "color: #00CC66; font-size: 12px; font-weight: bold;"
                 )
+                # 關閉設定視窗，讓主視窗執行更新
+                self.close()
+                main_win = self.parent()
+                if main_win and hasattr(main_win, '_do_update'):
+                    main_win._do_update(result)
+                return
             else:
                 self.update_status_label.setText("已是最新版本！")
                 self.update_status_label.setStyleSheet(

@@ -180,26 +180,56 @@ def download_and_apply(download_url: str, new_version: str,
 
         # ── 寫更新批次腳本 ──
         # 因為 exe 正在執行，不能直接覆蓋自己
-        # 寫一個 bat 腳本：等程式結束 → 覆蓋 → 重新啟動
+        # 寫一個 bat 腳本：強制結束程式 → 覆蓋 → 重新啟動
         bat_path = os.path.join(tmp_dir, "apply_update.bat")
         exe_path = sys.executable if getattr(sys, "frozen", False) else "python"
+        pid = os.getpid()
 
         with open(bat_path, "w", encoding="utf-8") as bat:
             bat.write(f"""@echo off
 chcp 65001 >nul
-echo 正在更新台股預測分析系統...
-echo 等待程式結束...
+echo ======================================
+echo   台股預測分析系統 — 正在更新...
+echo ======================================
+echo.
+
+REM 等待主程式退出（最多 15 秒）
+echo 等待程式結束 (PID={pid})...
+set /a WAITED=0
+:WAIT_LOOP
+tasklist /FI "PID eq {pid}" 2>nul | find /i "{pid}" >nul
+if errorlevel 1 goto PROCESS_DEAD
+if %WAITED% GEQ 15 goto FORCE_KILL
+timeout /t 1 /nobreak >nul
+set /a WAITED+=1
+goto WAIT_LOOP
+
+:FORCE_KILL
+echo 程式未自行結束，強制終止...
+taskkill /F /PID {pid} >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-REM 覆蓋程式檔案（排除使用者資料相關的檔案）
+:PROCESS_DEAD
+echo 程式已結束，開始覆蓋檔案...
+
+REM 覆蓋程式檔案
 xcopy /E /Y /I "{source_dir}\\*" "{APP_ROOT}\\" >nul 2>&1
+if errorlevel 1 (
+    echo [錯誤] 檔案覆蓋失敗！
+    pause
+    goto CLEANUP
+)
 
-REM 更新版本號
-echo {{"version": "{new_version}"}} > "{os.path.join(APP_ROOT, "version.json")}"
+REM 更新版本號（用 > 寫入 UTF-8 檔案）
+>"{os.path.join(APP_ROOT, "version.json")}" (
+    echo {{"version": "{new_version}"}}
+)
 
-echo 更新完成！重新啟動...
+echo.
+echo 更新完成！正在重新啟動...
 start "" "{exe_path}"
 
+:CLEANUP
 REM 清理暫存
 timeout /t 3 /nobreak >nul
 rd /s /q "{tmp_dir}" >nul 2>&1
