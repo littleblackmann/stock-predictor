@@ -413,6 +413,7 @@ QWidget#drawerHeader {
 }
 
 QLabel#drawerTitle {
+    background: transparent;
     color: #FFB800;
     font-size: 14px;
     font-weight: bold;

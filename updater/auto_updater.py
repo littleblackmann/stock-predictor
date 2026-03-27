@@ -7,6 +7,7 @@
 """
 import json
 import os
+import ssl
 import sys
 import shutil
 import subprocess
@@ -20,6 +21,39 @@ from logger.app_logger import get_logger
 from data.data_paths import APP_ROOT, DATA_ROOT
 
 logger = get_logger(__name__)
+
+
+def _get_ssl_context():
+    """取得 SSL context，Win10 舊版可能需要跳過驗證"""
+    try:
+        ctx = ssl.create_default_context()
+        # 嘗試用 certifi 的憑證（如果有）
+        try:
+            import certifi
+            ctx.load_verify_locations(certifi.where())
+        except ImportError:
+            pass
+        return ctx
+    except Exception:
+        # 最後手段：跳過 SSL 驗證（Win10 相容）
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
+
+def _urlopen_safe(req, timeout=30):
+    """urlopen 的安全包裝，自動處理 Win10 SSL 問題"""
+    try:
+        return urlopen(req, timeout=timeout)
+    except (URLError, ssl.SSLError):
+        # SSL 失敗，用不驗證的 context 重試
+        logger.warning("SSL 驗證失敗，使用備用連線方式")
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return urlopen(req, timeout=timeout, context=ctx)
+
 
 # ── 設定 ──────────────────────────────────────────────────────────
 # GitHub 倉庫資訊（使用者需要在 config 設定或寫死）
@@ -85,9 +119,9 @@ def check_for_update() -> dict | None:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "StockPredictor-Updater/1.0",
         })
-        with urlopen(req, timeout=10) as resp:
+        with _urlopen_safe(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except (URLError, json.JSONDecodeError, OSError) as e:
+    except (URLError, ssl.SSLError, json.JSONDecodeError, OSError) as e:
         logger.warning(f"更新檢查失敗：{e}")
         return None
 
@@ -164,7 +198,7 @@ def download_and_apply(download_url: str, new_version: str,
         req = Request(download_url, headers={
             "User-Agent": "StockPredictor-Updater/1.0",
         })
-        with urlopen(req, timeout=120) as resp:
+        with _urlopen_safe(req, timeout=120) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             with open(zip_path, "wb") as f:
@@ -264,6 +298,17 @@ del "%~f0" >nul 2>&1
             shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception:
             pass
+
+        # patch 失敗時 fallback 到 full
+        if is_patch and full_url:
+            logger.info("差量更新失敗，改用完整更新...")
+            return download_and_apply(
+                full_url, new_version,
+                progress_callback=progress_callback,
+                full_url=None,
+                is_patch=False,
+            )
+
         return False
 
 
