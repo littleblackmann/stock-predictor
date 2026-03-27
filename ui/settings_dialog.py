@@ -344,50 +344,16 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
-                "version": "v1.2.4",
+                "version": "v1.2.5",
                 "date": "2026-03-27",
                 "changes": [
-                    "修正更新後程式未自動重啟、檔案未覆蓋的問題",
-                    "修正版本號顯示為 v0.0.0 的問題",
-                    "「檢查更新」按鈕現在直接觸發更新流程",
-                    "更新時顯示明顯的進度對話框（含下載百分比）",
-                ],
-            },
-            {
-                "version": "v1.2.0",
-                "date": "2026-03-27",
-                "changes": [
-                    "新增「關於/更新」分頁，顯示版本號與更新日誌",
-                    "使用者可手動檢查更新",
-                ],
-            },
-            {
-                "version": "v1.1.0",
-                "date": "2026-03-27",
-                "changes": [
-                    "程式/資料分離：使用者資料搬到 AppData，更新不再遺失設定",
-                    "自動更新機制：啟動時檢查 GitHub 新版本，一鍵更新",
-                    "舊版遷移：v1.0.0 使用者首次啟動自動搬移資料",
-                    "修復 00922 等新 ETF 查詢崩潰問題",
-                    "改善 Windows 10 相容性",
-                ],
-            },
-            {
-                "version": "v1.0.0",
-                "date": "2026-03-23",
-                "changes": [
-                    "首次正式發行",
-                    "LSTM + LightGBM 融合預測",
-                    "GPT 新聞情緒分析 + Brave Search",
-                    "SHAP 可解釋性分析",
-                    "自選股管理、預測記錄、準確率追蹤",
-                    "籌碼面特徵（三大法人、融資融券）",
-                    "模型自我進化（增量學習 + 自動重訓）",
+                    "更新日誌只顯示最新版本",
                 ],
             },
         ]
 
-        for entry in changelogs:
+        # 只顯示最新一筆
+        for entry in changelogs[:1]:
             ver_title = QLabel(f"{entry['version']}  ({entry['date']})")
             ver_title.setFont(QFont("Microsoft JhengHei", 12, QFont.Weight.Bold))
             ver_title.setStyleSheet("color: #E0E6F0;")
