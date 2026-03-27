@@ -344,10 +344,11 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
-                "version": "v1.2.6",
+                "version": "v1.2.7",
                 "date": "2026-03-28",
                 "changes": [
-                    "差量更新：只下載有變動的檔案（幾 MB），不再每次下載 646MB",
+                    "修正 Win10 預測記錄背景為白色的問題",
+                    "修正自選股關閉按鈕顏色",
                 ],
             },
         ]

@@ -66,6 +66,42 @@ class PredictionLogDialog(QDialog):
         self.setWindowTitle("📊 預測記錄")
         self.resize(900, 560)
         self.setMinimumSize(700, 400)
+        # 確保 Win10 也套用深色主題
+        self.setStyleSheet("""
+            QDialog, QWidget {
+                background-color: #1A1A1A;
+                color: #E0E6F0;
+            }
+            QTableWidget {
+                background-color: #1A1A1A;
+                color: #E0E6F0;
+                gridline-color: #3A3A3A;
+                border: 1px solid #3A3A3A;
+                selection-background-color: #2A3A4A;
+            }
+            QTableWidget::item {
+                padding: 4px 8px;
+                border-bottom: 1px solid #2A2A2A;
+            }
+            QHeaderView::section {
+                background-color: #222222;
+                color: #00CC66;
+                border: 1px solid #3A3A3A;
+                padding: 6px 8px;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: #2A2A2A;
+                color: #E0E6F0;
+                border: 1px solid #3A3A3A;
+                border-radius: 6px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover {
+                background-color: #3A3A3A;
+                border: 1px solid #5A5A5A;
+            }
+        """)
         self._setup_ui()
         self._load_table()
 
