@@ -34,12 +34,20 @@ UPDATE_PREFS = os.path.join(DATA_ROOT, "update_prefs.json")
 
 
 def get_current_version() -> str:
-    """讀取本地版本號"""
-    try:
-        with open(VERSION_FILE, "r", encoding="utf-8") as f:
-            return json.load(f).get("version", "0.0.0")
-    except Exception:
-        return "0.0.0"
+    """讀取本地版本號
+    優先讀 exe 旁的 version.json（更新後會放這裡）；
+    找不到時改讀 _MEIPASS（PyInstaller 打包內建版本）。
+    """
+    candidates = [VERSION_FILE]
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(os.path.join(sys._MEIPASS, "version.json"))
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f).get("version", "0.0.0")
+        except Exception:
+            continue
+    return "0.0.0"
 
 
 def _get_update_config() -> dict:
