@@ -1,0 +1,37 @@
+# 使用者資料（不上傳）
+config.json
+watchlist.json
+recent.json
+prediction_log.csv
+auto_retrain_cooldown.json
+stock_list_cache.json
+tw_holiday_cache.json
+
+# Python
+venv_stock/
+__pycache__/
+*.pyc
+*.pyo
+
+# 執行時產出
+logs/
+models/saved/
+cache/
+dist/
+build/
+*.spec.bak
+
+# 打包產出（太大，用 Release 上傳）
+*.zip
+
+# PyInstaller
+*.manifest
+*.spec.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

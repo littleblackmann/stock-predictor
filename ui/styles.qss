@@ -1,0 +1,494 @@
+/* ========================================================
+   台股預測系統 - 企業級深色主題 QSS
+   主色調：鐵灰 #1A1A1A / 霓虹綠 #00FF88 / 霓虹紅 #FF3366
+   ======================================================== */
+
+/* ── 主視窗 ── */
+QMainWindow, QWidget {
+    background-color: #1A1A1A;
+    color: #E0E6F0;
+    font-family: 'Arial', 'Microsoft JhengHei', sans-serif;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+/* ── 頂部控制列容器 ── */
+#controlPanel {
+    background-color: #222222;
+    border-bottom: 1px solid #3A3A3A;
+    padding: 8px 12px;
+}
+
+/* ── 輸入框 ── */
+QLineEdit {
+    background-color: #2A2A2A;
+    color: #00FF88;
+    border: 1.5px solid #3A3A3A;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: bold;
+    selection-background-color: #00FF88;
+    selection-color: #1A1A1A;
+}
+
+QLineEdit:focus {
+    border: 1.5px solid #00FF88;
+    background-color: #202020;
+}
+
+QLineEdit::placeholder {
+    color: #4A4A4A;
+}
+
+/* ── 霓虹綠按鈕：預測明天 ── */
+QPushButton#btnPredict {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00CC66, stop:1 #008844
+    );
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 22px;
+    font-size: 14px;
+    font-weight: bold;
+    min-width: 110px;
+}
+
+QPushButton#btnPredict:hover {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00FF88, stop:1 #00CC66
+    );
+    border: 1px solid #00FF88;
+}
+
+QPushButton#btnPredict:pressed {
+    background-color: #005533;
+}
+
+QPushButton#btnPredict:disabled {
+    background-color: #2A3A2A;
+    color: #3A5A3A;
+}
+
+/* ── 灰色按鈕：清除資料 ── */
+QPushButton#btnClear {
+    background-color: #2A2A2A;
+    color: #8AA0B8;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QPushButton#btnClear:hover {
+    background-color: #333333;
+    color: #C0D0E0;
+    border: 1px solid #5A5A5A;
+}
+
+QPushButton#btnClear:pressed {
+    background-color: #1A1A1A;
+}
+
+/* ── 亮藍按鈕：匯出報表 ── */
+QPushButton#btnExport {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #0088CC, stop:1 #005588
+    );
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QPushButton#btnExport:hover {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 #00AAFF, stop:1 #0077CC
+    );
+    border: 1px solid #00AAFF;
+}
+
+QPushButton#btnExport:pressed {
+    background-color: #003366;
+}
+
+QPushButton#btnExport:disabled {
+    background-color: #1E1E1E;
+    color: #3A3A3A;
+}
+
+/* ── 預測記錄按鈕 ── */
+QPushButton#btnLog {
+    background-color: #252525;
+    color: #88AACC;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QPushButton#btnLog:hover {
+    background-color: #2E2E2E;
+    color: #AACCEE;
+    border: 1px solid #5A5A5A;
+}
+
+/* ── 重新訓練按鈕 ── */
+QPushButton#btnRetrain {
+    background-color: #222222;
+    color: #9988FF;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+QPushButton#btnRetrain:hover {
+    background-color: #2E2E2E;
+    border: 1px solid #7766FF;
+    color: #BBAAFF;
+}
+
+/* ── 預測面板捲動容器 ── */
+QScrollArea#predictionScrollArea {
+    background-color: #222222;
+    border-left: 1px solid #3A3A3A;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+}
+
+QScrollArea#predictionScrollArea > QWidget > QWidget {
+    background-color: #222222;
+}
+
+/* ── 預測結果面板容器 ── */
+#predictionPanel {
+    background-color: #222222;
+    border-left: 1px solid #3A3A3A;
+}
+
+/* ── 大型預測文字標籤 ── */
+QLabel#labelPrediction {
+    color: #00FF88;
+    font-size: 22px;
+    font-weight: bold;
+    padding: 10px 0px;
+}
+
+QLabel#labelPredictionDown {
+    color: #FF3366;
+    font-size: 22px;
+    font-weight: bold;
+    padding: 10px 0px;
+}
+
+/* ── 信心度數值 ── */
+QLabel#labelConfidence {
+    color: #E0E6F0;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+/* ── 進度條（信心度）── */
+QProgressBar {
+    border: 1px solid #3A3A3A;
+    border-radius: 6px;
+    background-color: #252525;
+    text-align: center;
+    color: #E0E6F0;
+    font-size: 11px;
+    height: 20px;
+}
+
+QProgressBar::chunk#chunkUp {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #008844, stop:1 #00FF88
+    );
+    border-radius: 5px;
+}
+
+QProgressBar::chunk {
+    background-color: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 #008844, stop:1 #00FF88
+    );
+    border-radius: 5px;
+}
+
+/* ── 指標說明文字 ── */
+QLabel#labelMetrics {
+    color: #7A9ABE;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+QLabel#labelExplain {
+    color: #9ABCDE;
+    font-size: 15px;
+    padding: 10px;
+    background-color: #202020;
+    border-radius: 6px;
+    border: 1px solid #3A3A3A;
+}
+
+/* ── 區塊標題 ── */
+QLabel#sectionTitle {
+    color: #4A8ACA;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #3A3A3A;
+}
+
+/* ── 狀態列 ── */
+QStatusBar {
+    background-color: #111111;
+    color: #5A7A9A;
+    border-top: 1px solid #3A3A3A;
+    font-size: 11px;
+}
+
+QStatusBar QLabel {
+    color: #5A7A9A;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+/* ── 捲軸 ── */
+QScrollBar:vertical {
+    background: #222222;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical {
+    background: #3A3A3A;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #5A5A5A;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* ── 工具提示 ── */
+QToolTip {
+    background-color: #222222;
+    color: #E0E6F0;
+    border: 1px solid #4A4A4A;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+/* ── 股票代碼下拉選單 ── */
+QListWidget#stockDropdown {
+    background-color: #252525;
+    color: #C8D8E8;
+    border: 1px solid #4A4A4A;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+}
+
+QListWidget#stockDropdown::item {
+    padding: 5px 8px;
+    border-bottom: 1px solid #1A1A1A;
+}
+
+QListWidget#stockDropdown::item:hover {
+    background-color: #333333;
+    color: #00CCFF;
+}
+
+QListWidget#stockDropdown::item:selected {
+    background-color: #3A3A3A;
+    color: #00EEFF;
+}
+
+/* ── 設定按鈕 ── */
+QPushButton#btnSettings {
+    background-color: #222222;
+    color: #8A8A8A;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+QPushButton#btnSettings:hover {
+    background-color: #2A2A2A;
+    border: 1px solid #5A5A5A;
+    color: #E0E6F0;
+}
+
+/* ── 最近查詢按鈕 ── */
+QPushButton#btnRecent {
+    background-color: #222222;
+    color: #6A6A6A;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+QPushButton#btnRecent:hover {
+    background-color: #2A2A2A;
+    border: 1px solid #5A5A5A;
+    color: #AACCEE;
+}
+
+/* ── 自選股按鈕（控制列）── */
+QPushButton#btnWatchlist {
+    background-color: #222222;
+    color: #FFB800;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+QPushButton#btnWatchlist:hover {
+    background-color: #2A2A2A;
+    border: 1px solid #FFB800;
+    color: #FFD700;
+}
+
+QPushButton#btnWatchlist:pressed {
+    background-color: #151515;
+}
+
+/* ── 自選股抽屜 ── */
+QWidget#watchlistDrawer {
+    background-color: #1A1A1A;
+    border-right: 2px solid #3A3A3A;
+}
+
+QWidget#drawerHeader {
+    background-color: #222222;
+    border-bottom: 1px solid #3A3A3A;
+}
+
+QLabel#drawerTitle {
+    color: #FFB800;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+QPushButton#drawerClose {
+    background: transparent;
+    color: #5A5A5A;
+    border: none;
+    font-size: 14px;
+    border-radius: 4px;
+}
+
+QPushButton#drawerClose:hover {
+    color: #FF4466;
+    background: #2A2A2A;
+}
+
+QScrollArea#drawerScroll {
+    background-color: #1A1A1A;
+    border: none;
+}
+
+QWidget#drawerCardsContainer {
+    background-color: #1A1A1A;
+    border: none;
+}
+
+/* 卡片 */
+QFrame#drawerCard {
+    background-color: #252525;
+    border: 1px solid #333333;
+    border-radius: 8px;
+}
+
+QFrame#drawerCard:hover {
+    background-color: #2A2A2A;
+    border: 1.5px solid #00AACC;
+}
+
+QLabel#cardCode {
+    color: #00CCFF;
+    font-size: 15px;
+    font-weight: bold;
+    background: transparent;
+    border: none;
+}
+
+QLabel#cardName {
+    color: #5A5A5A;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+}
+
+QPushButton#cardDelete {
+    background: transparent;
+    color: #3A3A3A;
+    border: none;
+    font-size: 10px;
+    border-radius: 3px;
+}
+
+QPushButton#cardDelete:hover {
+    color: #FF4466;
+    background: #2A2A2A;
+}
+
+/* 技術訊號標籤 */
+QLabel#signalBadge {
+    font-size: 10px;
+    font-weight: bold;
+    color: #E0E6F0;
+    background-color: #2A2A2A;
+    border: 1px solid #3A3A3A;
+    border-radius: 4px;
+    padding: 1px 5px;
+}
+
+/* 底部新增區 */
+QWidget#drawerAddSection {
+    background-color: #222222;
+    border-top: 1px solid #3A3A3A;
+}
+
+QPushButton#drawerAddBtn {
+    background-color: #1E1E1E;
+    color: #00AACC;
+    border: 1px solid #3A3A3A;
+    border-radius: 6px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+QPushButton#drawerAddBtn:hover {
+    background-color: #282828;
+    border-color: #00CCFF;
+    color: #00EEFF;
+}
+
+/* ── 分隔線 ── */
+QFrame[frameShape="4"],  /* HLine */
+QFrame[frameShape="5"] { /* VLine */
+    color: #3A3A3A;
+    background-color: #3A3A3A;
+}
