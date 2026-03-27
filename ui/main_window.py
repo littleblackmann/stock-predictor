@@ -794,9 +794,9 @@ class MainWindow(QMainWindow):
                 "更新已下載完成，程式將自動重新啟動。\n"
                 "您的所有資料都已安全保留。"
             )
-            # 關閉應用程式，讓更新腳本接手
-            from PySide6.QtWidgets import QApplication
-            QApplication.instance().quit()
+            # 強制終止程式，讓更新腳本接手重啟
+            import os as _os
+            _os._exit(0)
         else:
             QMessageBox.warning(
                 self, "更新失敗",
