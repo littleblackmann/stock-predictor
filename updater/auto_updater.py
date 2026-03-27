@@ -23,8 +23,8 @@ logger = get_logger(__name__)
 
 # ── 設定 ──────────────────────────────────────────────────────────
 # GitHub 倉庫資訊（使用者需要在 config 設定或寫死）
-GITHUB_OWNER = ""     # 例如 "myuser"
-GITHUB_REPO  = ""     # 例如 "stock-predictor"
+GITHUB_OWNER = "littleblackmann"
+GITHUB_REPO  = "stock-predictor"
 
 # 本地版本檔
 VERSION_FILE = os.path.join(APP_ROOT, "version.json")
