@@ -81,6 +81,7 @@ class SettingsDialog(QDialog):
 
         self.tabs.addTab(self._build_api_tab(), "API 設定")
         self.tabs.addTab(self._build_guide_tab(), "使用說明")
+        self.tabs.addTab(self._build_about_tab(), "關於 / 更新")
         layout.addWidget(self.tabs, stretch=1)
 
         # ── 按鈕列 ──
@@ -290,6 +291,142 @@ class SettingsDialog(QDialog):
         scroll.setWidget(content)
         outer.addWidget(scroll)
         return tab
+
+    # ── Tab 3: 關於 / 更新 ─────────────────────────────────────────
+
+    def _build_about_tab(self) -> QWidget:
+        from updater.auto_updater import get_current_version
+
+        tab = QWidget()
+        outer = QVBoxLayout(tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+
+        # ── 版本資訊 ──
+        version = get_current_version()
+        layout.addWidget(self._make_section_title("台股預測分析系統"))
+
+        ver_label = QLabel(f"目前版本：v{version}")
+        ver_label.setFont(QFont("Microsoft JhengHei", 16, QFont.Weight.Bold))
+        ver_label.setStyleSheet("color: #00CC66;")
+        layout.addWidget(ver_label)
+
+        # ── 檢查更新按鈕 ──
+        self.btn_check_update = QPushButton("檢查更新")
+        self.btn_check_update.setFixedSize(120, 36)
+        self.btn_check_update.setStyleSheet(
+            "background: qlineargradient(x1:0,y1:0,x2:0,y2:1,"
+            "stop:0 #0088CC, stop:1 #006699); "
+            "color: #FFFFFF; border: none; border-radius: 6px; "
+            "font-weight: bold; font-size: 13px;"
+        )
+        self.btn_check_update.clicked.connect(self._on_check_update)
+        layout.addWidget(self.btn_check_update)
+
+        self.update_status_label = QLabel("")
+        self.update_status_label.setStyleSheet("color: #7A9ABE; font-size: 12px;")
+        layout.addWidget(self.update_status_label)
+
+        layout.addWidget(self._make_hline())
+
+        # ── 更新日誌 ──
+        layout.addWidget(self._make_section_title("更新日誌"))
+
+        changelogs = [
+            {
+                "version": "v1.2.0",
+                "date": "2026-03-27",
+                "changes": [
+                    "新增「關於/更新」分頁，顯示版本號與更新日誌",
+                    "使用者可手動檢查更新",
+                ],
+            },
+            {
+                "version": "v1.1.0",
+                "date": "2026-03-27",
+                "changes": [
+                    "程式/資料分離：使用者資料搬到 AppData，更新不再遺失設定",
+                    "自動更新機制：啟動時檢查 GitHub 新版本，一鍵更新",
+                    "舊版遷移：v1.0.0 使用者首次啟動自動搬移資料",
+                    "修復 00922 等新 ETF 查詢崩潰問題",
+                    "改善 Windows 10 相容性",
+                ],
+            },
+            {
+                "version": "v1.0.0",
+                "date": "2026-03-23",
+                "changes": [
+                    "首次正式發行",
+                    "LSTM + LightGBM 融合預測",
+                    "GPT 新聞情緒分析 + Brave Search",
+                    "SHAP 可解釋性分析",
+                    "自選股管理、預測記錄、準確率追蹤",
+                    "籌碼面特徵（三大法人、融資融券）",
+                    "模型自我進化（增量學習 + 自動重訓）",
+                ],
+            },
+        ]
+
+        for entry in changelogs:
+            ver_title = QLabel(f"{entry['version']}  ({entry['date']})")
+            ver_title.setFont(QFont("Microsoft JhengHei", 12, QFont.Weight.Bold))
+            ver_title.setStyleSheet("color: #E0E6F0;")
+            layout.addWidget(ver_title)
+
+            changes_text = "\n".join(f"  •  {c}" for c in entry["changes"])
+            changes_label = QLabel(changes_text)
+            changes_label.setWordWrap(True)
+            changes_label.setStyleSheet(
+                "color: #A0B0C0; font-size: 12px; "
+                "padding: 6px 10px 12px 10px;"
+            )
+            layout.addWidget(changes_label)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        return tab
+
+    def _on_check_update(self):
+        """手動檢查更新"""
+        self.btn_check_update.setEnabled(False)
+        self.btn_check_update.setText("檢查中...")
+        self.update_status_label.setText("")
+
+        try:
+            from updater.auto_updater import check_for_update
+            result = check_for_update()
+            if result:
+                self.update_status_label.setText(
+                    f"發現新版本 v{result['version']}！請關閉設定視窗後，"
+                    "系統會自動提示更新。"
+                )
+                self.update_status_label.setStyleSheet(
+                    "color: #00CC66; font-size: 12px; font-weight: bold;"
+                )
+            else:
+                self.update_status_label.setText("已是最新版本！")
+                self.update_status_label.setStyleSheet(
+                    "color: #7A9ABE; font-size: 12px;"
+                )
+        except Exception as e:
+            self.update_status_label.setText(f"檢查失敗：{e}")
+            self.update_status_label.setStyleSheet(
+                "color: #FF6666; font-size: 12px;"
+            )
+
+        self.btn_check_update.setEnabled(True)
+        self.btn_check_update.setText("檢查更新")
 
     # ── 資料 ─────────────────────────────────────────────────────
 
