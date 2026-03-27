@@ -802,10 +802,16 @@ class MainWindow(QMainWindow):
                 progress.setValue(pct)
                 QApplication.processEvents()
 
+        is_patch = update_info.get("is_patch", False)
+        if is_patch:
+            progress.setLabelText(f"正在下載差量更新 v{version}...")
+
         success = download_and_apply(
             update_info["download_url"],
             update_info["version"],
             progress_callback=on_progress,
+            full_url=update_info.get("full_url"),
+            is_patch=is_patch,
         )
 
         progress.close()

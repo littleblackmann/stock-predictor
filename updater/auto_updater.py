@@ -98,21 +98,27 @@ def check_for_update() -> dict | None:
         logger.info(f"已是最新版本 v{current}")
         return None
 
-    # 找到 ZIP 下載連結
-    download_url = None
+    # 找到 ZIP 下載連結（優先 patch，fallback full）
+    patch_url = None
+    full_url = None
     for asset in data.get("assets", []):
         name = asset.get("name", "")
-        if name.endswith(".zip"):
-            download_url = asset.get("browser_download_url")
-            break
+        if name.endswith("_patch.zip"):
+            patch_url = asset.get("browser_download_url")
+        elif name.endswith(".zip"):
+            full_url = asset.get("browser_download_url")
+
+    download_url = patch_url or full_url
 
     if not download_url:
-        # 沒有 asset 就用 source ZIP
         download_url = data.get("zipball_url")
 
     if not download_url:
         logger.warning("找不到可下載的更新檔案")
         return None
+
+    is_patch = (download_url == patch_url)
+    logger.info(f"更新模式：{'差量 (patch)' if is_patch else '完整 (full)'}")
 
     # 檢查是否已跳過此版本
     skipped = _load_skipped_version()
@@ -124,19 +130,26 @@ def check_for_update() -> dict | None:
     return {
         "version":       remote_version,
         "download_url":  download_url,
+        "full_url":      full_url,
+        "is_patch":      is_patch,
         "release_notes": data.get("body", ""),
     }
 
 
 def download_and_apply(download_url: str, new_version: str,
-                       progress_callback=None) -> bool:
+                       progress_callback=None,
+                       full_url: str = None,
+                       is_patch: bool = False) -> bool:
     """
     下載 ZIP 並覆蓋程式目錄（使用者資料不受影響）。
+    支援差量更新（patch）和完整更新（full）。
 
     Args:
-        download_url: ZIP 下載連結
+        download_url: ZIP 下載連結（patch 或 full）
         new_version: 新版本號
         progress_callback: 進度回呼 (bytes_downloaded, total_bytes)
+        full_url: 完整包下載連結（patch 失敗時 fallback）
+        is_patch: 是否為差量更新
 
     Returns:
         True: 更新成功，需要重啟

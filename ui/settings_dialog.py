@@ -344,10 +344,10 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
-                "version": "v1.2.5",
-                "date": "2026-03-27",
+                "version": "v1.2.6",
+                "date": "2026-03-28",
                 "changes": [
-                    "更新日誌只顯示最新版本",
+                    "差量更新：只下載有變動的檔案（幾 MB），不再每次下載 646MB",
                 ],
             },
         ]

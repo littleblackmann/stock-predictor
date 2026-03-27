@@ -5,7 +5,9 @@
     python build.py
 
 輸出：
-    dist/台股預測分析系統/   ← 整個資料夾給對方就能用
+    dist/台股預測分析系統/              ← 整個資料夾給對方就能用
+    台股預測分析系統_vX.X.X.zip        ← 完整安裝包（新用戶）
+    台股預測分析系統_vX.X.X_patch.zip  ← 差量更新包（已安裝用戶）
 
 重要：
     v1.1.0 起，使用者資料（config、watchlist、模型、快取、日誌）
@@ -19,6 +21,7 @@
 import os
 import sys
 import json
+import hashlib
 import subprocess
 import shutil
 import zipfile
@@ -36,7 +39,9 @@ try:
 except Exception:
     APP_VERSION = "0.0.0"
 
-OUTPUT_ZIP  = f"台股預測分析系統_v{APP_VERSION}.zip"
+OUTPUT_ZIP   = f"台股預測分析系統_v{APP_VERSION}.zip"
+PATCH_ZIP    = f"台股預測分析系統_v{APP_VERSION}_patch.zip"
+MANIFEST_SAVE = "build_manifest.json"  # 上一次打包的 manifest，留給下次比對
 
 
 def check_env():
@@ -58,6 +63,58 @@ def check_env():
     return True
 
 
+# ── 差量更新工具 ─────────────────────────────────────────────────
+
+def _hash_file(filepath: str) -> str:
+    """計算檔案 SHA256"""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def generate_manifest(dist_dir: str) -> dict:
+    """掃描 dist 資料夾，產生 {相對路徑: sha256} 的 manifest"""
+    manifest = {}
+    for root, _dirs, files in os.walk(dist_dir):
+        for fname in files:
+            filepath = os.path.join(root, fname)
+            relpath = os.path.relpath(filepath, dist_dir).replace("\\", "/")
+            manifest[relpath] = _hash_file(filepath)
+    return manifest
+
+
+def create_patch_zip(dist_dir: str, old_manifest: dict, new_manifest: dict) -> str | None:
+    """
+    比對新舊 manifest，只把有變動的檔案打成 patch zip。
+    回傳 patch zip 路徑，若無差異回傳 None。
+    """
+    changed = []
+    for relpath, new_hash in new_manifest.items():
+        if relpath not in old_manifest or old_manifest[relpath] != new_hash:
+            changed.append(relpath)
+
+    if not changed:
+        print("  [PATCH] 與上次打包完全相同，不產生 patch")
+        return None
+
+    with zipfile.ZipFile(PATCH_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for relpath in changed:
+            filepath = os.path.join(dist_dir, relpath)
+            # 保持與 full zip 相同的目錄結構：台股預測分析系統/xxx
+            arcname = os.path.join(APP_NAME, relpath)
+            zf.write(filepath, arcname)
+
+    patch_size = os.path.getsize(PATCH_ZIP) / 1024 / 1024
+    print(f"  [PATCH] 差量更新包：{PATCH_ZIP}  ({patch_size:.1f} MB)")
+    print(f"  [PATCH] 變動檔案數：{len(changed)} / {len(new_manifest)}")
+
+    return PATCH_ZIP
+
+
+# ── 主打包流程 ───────────────────────────────────────────────────
+
 def build():
     print("=" * 60)
     print(f"  台股預測分析系統 打包建置")
@@ -65,7 +122,7 @@ def build():
     print(f"  版本：v{APP_VERSION}")
     print("=" * 60)
 
-    print("\n[0/3] 環境確認...")
+    print("\n[0/4] 環境確認...")
     if not check_env():
         return
 
@@ -74,7 +131,7 @@ def build():
         print(f"\n  清理舊版本：{DIST_DIR}")
         shutil.rmtree(DIST_DIR)
 
-    print("\n[1/3] PyInstaller 打包中（約需 5～15 分鐘）...")
+    print("\n[1/4] PyInstaller 打包中（約需 5～15 分鐘）...")
     result = subprocess.run(
         [sys.executable, "-m", "PyInstaller", SPEC_FILE, "--noconfirm"],
         cwd=os.path.dirname(os.path.abspath(__file__))
@@ -84,7 +141,40 @@ def build():
         print("\n[FAIL] 打包失敗！請查看上方錯誤訊息。")
         return
 
-    print(f"\n[2/3] 壓縮為 {OUTPUT_ZIP}...")
+    # ── 產生 manifest 並寫入 dist ──
+    print("\n[2/4] 產生檔案清單 (manifest)...")
+    new_manifest = generate_manifest(DIST_DIR)
+    print(f"  共 {len(new_manifest)} 個檔案")
+
+    # 把 manifest 放進 dist（讓使用者端也有一份，未來可用於本地比對）
+    manifest_in_dist = os.path.join(DIST_DIR, "manifest.json")
+    with open(manifest_in_dist, "w", encoding="utf-8") as f:
+        json.dump(new_manifest, f, ensure_ascii=False)
+
+    # 更新 manifest 的 hash（因為剛寫入了 manifest.json 本身）
+    new_manifest["manifest.json"] = _hash_file(manifest_in_dist)
+
+    # ── 差量更新包 ──
+    old_manifest = {}
+    if os.path.exists(MANIFEST_SAVE):
+        try:
+            with open(MANIFEST_SAVE, "r", encoding="utf-8") as f:
+                old_manifest = json.load(f)
+            print(f"  載入上次 manifest（{len(old_manifest)} 個檔案）")
+        except Exception:
+            print("  上次 manifest 讀取失敗，跳過差量")
+
+    if old_manifest:
+        create_patch_zip(DIST_DIR, old_manifest, new_manifest)
+    else:
+        print("  [PATCH] 首次打包，無法產生差量更新包")
+
+    # 儲存本次 manifest 供下次比對
+    with open(MANIFEST_SAVE, "w", encoding="utf-8") as f:
+        json.dump(new_manifest, f, ensure_ascii=False)
+
+    # ── 完整安裝包 ──
+    print(f"\n[3/4] 壓縮完整安裝包 {OUTPUT_ZIP}...")
     with zipfile.ZipFile(OUTPUT_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for root, dirs, files in os.walk(DIST_DIR):
             for file in files:
@@ -93,16 +183,16 @@ def build():
                 zf.write(filepath, arcname)
 
     zip_size = os.path.getsize(OUTPUT_ZIP) / 1024 / 1024
+
     print(f"\n{'=' * 60}")
     print(f"[OK] 打包完成！")
     print(f"   資料夾：{DIST_DIR}")
-    print(f"   壓縮檔：{OUTPUT_ZIP}  ({zip_size:.0f} MB)")
-    print(f"\n[NOTE] 給使用者的操作方式：")
-    print(f"   1. 解壓縮 ZIP")
-    print(f"   2. 進入「{APP_NAME}」資料夾")
-    print(f"   3. 點兩下「{APP_NAME}.exe」")
-    print(f"   4. 程式會自動在 AppData 建立設定檔")
-    print(f"   5. 更新時只需替換程式資料夾，使用者資料不受影響")
+    print(f"   完整包：{OUTPUT_ZIP}  ({zip_size:.0f} MB)")
+    if os.path.exists(PATCH_ZIP):
+        patch_size = os.path.getsize(PATCH_ZIP) / 1024 / 1024
+        print(f"   差量包：{PATCH_ZIP}  ({patch_size:.1f} MB)")
+    print(f"\n[NOTE] 上傳 Release 時，full + patch 都上傳：")
+    print(f'   gh release create vX.X.X "{OUTPUT_ZIP}" "{PATCH_ZIP}" ...')
     print(f"{'=' * 60}")
 
 
