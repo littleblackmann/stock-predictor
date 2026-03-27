@@ -9,9 +9,9 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QLabel, QStatusBar,
-    QMessageBox, QSizePolicy, QProgressBar,
+    QMessageBox, QSizePolicy, QProgressBar, QProgressDialog,
     QScrollArea, QFrame, QGraphicsOpacityEffect,
-    QSystemTrayIcon, QMenu
+    QSystemTrayIcon, QMenu, QApplication
 )
 from PySide6.QtCore import Qt, QThreadPool, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QIcon, QFont, QColor
@@ -773,20 +773,42 @@ class MainWindow(QMainWindow):
         """執行更新"""
         from updater.auto_updater import download_and_apply
 
-        self.statusBar().showMessage("正在下載更新...")
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setVisible(True)
+        version = update_info["version"]
+
+        # 建立明顯的進度對話框
+        progress = QProgressDialog(
+            f"正在下載更新 v{version}...", None, 0, 100, self
+        )
+        progress.setWindowTitle("台股預測分析系統 — 更新中")
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumWidth(420)
+        progress.setMinimumHeight(120)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setCancelButton(None)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
 
         def on_progress(downloaded, total):
             if total > 0:
                 pct = int(downloaded / total * 100)
-                self.progress_bar.setValue(pct)
+                mb_done  = downloaded / 1024 / 1024
+                mb_total = total / 1024 / 1024
+                progress.setLabelText(
+                    f"正在下載更新 v{version}...\n"
+                    f"{mb_done:.1f} MB / {mb_total:.1f} MB  ({pct}%)"
+                )
+                progress.setValue(pct)
+                QApplication.processEvents()
 
         success = download_and_apply(
             update_info["download_url"],
             update_info["version"],
             progress_callback=on_progress,
         )
+
+        progress.close()
 
         if success:
             QMessageBox.information(
@@ -803,7 +825,6 @@ class MainWindow(QMainWindow):
                 "下載或安裝更新時發生錯誤。\n"
                 "請稍後再試，或手動下載新版本。"
             )
-            self.progress_bar.setVisible(False)
             self.statusBar().showMessage("更新失敗", 5000)
 
     def closeEvent(self, event):
