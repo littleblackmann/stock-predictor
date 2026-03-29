@@ -94,24 +94,33 @@ class PredictionWorker(QRunnable):
                 progress_callback=lambda p, msg: self._emit_progress(p, msg)
             )
 
-            self._emit_progress(35, "資料下載完成，抓取籌碼資料...")
+            self._emit_progress(10, "資料下載完成，抓取籌碼資料...")
 
             # ── 步驟 2：抓取籌碼面資料（三大法人 + 融資融券）──────
             try:
                 from datetime import date, timedelta
                 chip_start = df_raw.index[0].date()
                 chip_end   = df_raw.index[-1].date()
-                chip_df = ChipFetcher().fetch(self.symbol, chip_start, chip_end)
+
+                def _chip_progress(cur, total):
+                    if total > 0:
+                        pct = 10 + int((cur / total) * 35)  # 10% → 45%
+                        self._emit_progress(pct, f"抓取籌碼資料... ({cur+1}/{total})")
+
+                chip_df = ChipFetcher().fetch(
+                    self.symbol, chip_start, chip_end,
+                    progress_callback=_chip_progress,
+                )
             except Exception as e:
                 logger.warning(f"籌碼資料抓取失敗，降級為純技術面：{e}")
                 chip_df = None
 
-            self._emit_progress(36, "下載美股隔夜資料（S&P500 / 費半 / VIX）...")
+            self._emit_progress(46, "下載美股隔夜資料（S&P500 / 費半 / VIX）...")
 
             # ── 步驟 2.5：下載美股隔夜資料 ─────────────────────
             us_data = self._download_us_market_data(1500)
 
-            self._emit_progress(38, "計算技術指標 + 籌碼 + 美股 + 週線特徵...")
+            self._emit_progress(50, "計算技術指標 + 籌碼 + 美股 + 週線特徵...")
 
             # ── 步驟 3：特徵工程 ─────────────────────────────────
             engineer = FeatureEngineer()
@@ -120,7 +129,7 @@ class PredictionWorker(QRunnable):
             feature_cols      = engineer.get_feature_cols()
             lstm_input_cols   = engineer.get_lstm_input_cols()
 
-            self._emit_progress(40, "技術指標計算完成")
+            self._emit_progress(53, "技術指標計算完成")
 
             # ── 步驟 3：LSTM 訓練 / 載入 ────────────────────────
             lstm_extractor = LSTMExtractor(symbol=self.symbol)
@@ -137,17 +146,17 @@ class PredictionWorker(QRunnable):
                         lstm_loaded = False
 
             if not lstm_loaded:
-                self._emit_progress(42, "開始訓練 LSTM 時序模型（首次訓練需要幾分鐘）...")
+                self._emit_progress(55, "開始訓練 LSTM 時序模型（首次訓練需要幾分鐘）...")
                 lstm_extractor.train(
                     df=df_features,
                     input_cols=lstm_input_cols,
                     progress_callback=lambda p, msg: self._emit_progress(p, msg)
                 )
             else:
-                self._emit_progress(65, "LSTM 模型載入成功")
+                self._emit_progress(68, "LSTM 模型載入成功")
 
             # ── 步驟 4：萃取全部時間步的 LSTM 特徵 ──────────────
-            self._emit_progress(66, "萃取 LSTM 時間特徵向量...")
+            self._emit_progress(70, "萃取 LSTM 時間特徵向量...")
 
             # 對所有訓練資料萃取 LSTM 特徵（用於訓練 LGBM）
             from models.lstm_extractor import SEQUENCE_LEN
@@ -174,15 +183,15 @@ class PredictionWorker(QRunnable):
                 )
             else:
                 eval_metrics = lgbm_clf.eval_metrics
-                self._emit_progress(85, "LightGBM 模型載入成功")
+                self._emit_progress(83, "LightGBM 模型載入成功")
 
             # ── 步驟 6：新聞搜尋 + 情緒分析 ──────────────────────
-            self._emit_progress(88, "正在搜尋新聞並分析情緒（AI）...")
+            self._emit_progress(85, "正在搜尋新聞並分析情緒（AI）...")
             sentiment_analyzer = NewsSentimentAnalyzer()
             sentiment = sentiment_analyzer.analyze(self.symbol)
 
             # ── 步驟 7：預測明天 ──────────────────────────────────
-            self._emit_progress(90, "正在推論明日走勢...")
+            self._emit_progress(92, "正在推論明日走勢...")
 
             latest_lstm_feat = lstm_extractor.extract_features(df_features, lstm_input_cols)
             latest_tech_feat = df_features[feature_cols].iloc[-1].values.reshape(1, -1)
@@ -191,8 +200,16 @@ class PredictionWorker(QRunnable):
 
             # ── 信心篩選機制 ─────────────────────────────────────────
             # 根據 Ensemble 模型的一致性（std）和距離 50% 的幅度判斷信心
+            # 並考慮市場行情狀態：盤整盤本來就難預測，自動降級信心
             ensemble_std = prediction.get("ensemble_std", 0)
             distance_from_50 = abs(prediction["up_prob"] - 0.5)
+
+            # 取出最新一筆的市場狀態特徵
+            latest_regime = float(df_features["market_regime"].iloc[-1])
+            if "volatility_regime" in df_features.columns:
+                latest_vol_regime = float(df_features["volatility_regime"].iloc[-1])
+            else:
+                latest_vol_regime = 0.5
 
             if distance_from_50 < 0.03 or ensemble_std > 0.05:
                 confidence_level = "low"
@@ -204,11 +221,25 @@ class PredictionWorker(QRunnable):
                 confidence_level = "high"
                 confidence_note = "模型高度一致"
 
+            # 盤整盤降級：行情不明時即使模型有方向，信心也不該太高
+            if latest_regime == 0 and confidence_level == "high":
+                confidence_level = "medium"
+                confidence_note = "趨勢不明（盤整），信心自動降級"
+            elif latest_regime == 0 and confidence_level == "medium":
+                confidence_note += "（盤整行情，預測難度較高）"
+
+            # 高波動環境額外提示
+            if latest_vol_regime > 0.8:
+                confidence_note += "（波動偏高，注意風險）"
+
             prediction["confidence_level"] = confidence_level
             prediction["confidence_note"]  = confidence_note
+            prediction["market_regime"]    = int(latest_regime)
 
+            regime_label = {1: "多頭", -1: "空頭", 0: "盤整"}.get(int(latest_regime), "未知")
             logger.info(f"信心篩選：{confidence_level}（距50%={distance_from_50:.1%}，"
-                        f"模型分散度={ensemble_std:.4f}）")
+                        f"模型分散度={ensemble_std:.4f}，行情={regime_label}，"
+                        f"波動率={latest_vol_regime:.0%}）")
 
             # ── GPT 情緒加權融合 ──────────────────────────────────
             # 基礎權重 15%，Brave 深度分析時根據影響程度 / 時間範圍動態調整

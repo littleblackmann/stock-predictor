@@ -344,6 +344,14 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.3.2",
+                "date": "2026-03-30",
+                "changes": [
+                    "新增預測進度對話框（顯示步驟、百分比、經過時間）",
+                    "籌碼抓取加入逐日進度回報，不再看似當機",
+                ],
+            },
+            {
                 "version": "v1.3.1",
                 "date": "2026-03-29",
                 "changes": [

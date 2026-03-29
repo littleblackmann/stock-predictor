@@ -21,6 +21,7 @@ from ui.prediction_panel import PredictionPanel
 from ui.watchlist_drawer import WatchlistDrawer
 from ui.smart_line_edit import SmartLineEdit
 from ui.prediction_log_dialog import PredictionLogDialog
+from ui.prediction_progress_dialog import PredictionProgressDialog
 from workers.prediction_worker import PredictionWorker
 from logger.app_logger import get_logger
 from data.tw_stock_list import TW_STOCK_LIST
@@ -464,6 +465,9 @@ class MainWindow(QMainWindow):
         self._show_status(f"正在啟動預測任務：{symbol}...")
         self.progress_bar.setValue(0)
 
+        # 建立並顯示進度對話框
+        self._progress_dialog = PredictionProgressDialog(symbol, parent=self)
+
         worker = PredictionWorker(symbol=symbol, retrain=retrain)
         worker.signals.progress_updated.connect(self._on_progress)
         worker.signals.prediction_finished.connect(self._on_prediction_finished)
@@ -471,6 +475,9 @@ class MainWindow(QMainWindow):
 
         QThreadPool.globalInstance().start(worker)
         logger.info(f"預測任務已派送：{symbol}，retrain={retrain}")
+
+        # 非阻塞顯示（用 show 而非 exec，讓事件迴圈繼續跑）
+        self._progress_dialog.show()
 
     def _on_progress(self, percent: int, message: str):
         """背景執行緒回報進度"""
@@ -482,6 +489,10 @@ class MainWindow(QMainWindow):
         )
         self._show_status(message)
 
+        # 同步更新進度對話框
+        if hasattr(self, "_progress_dialog") and self._progress_dialog:
+            self._progress_dialog.update_progress(percent, message)
+
     def _on_prediction_finished(self, result: dict):
         """預測完成：存 cache、寫記錄、更新最近查詢，最後顯示結果"""
         symbol = result.get("symbol", "")
@@ -492,6 +503,11 @@ class MainWindow(QMainWindow):
             PredictionLogger.append(result)
         except Exception as e:
             logger.warning(f"預測記錄寫入失敗：{e}")
+
+        # 關閉進度對話框
+        if hasattr(self, "_progress_dialog") and self._progress_dialog:
+            self._progress_dialog.finish()
+            self._progress_dialog = None
 
         self._display_result(result)
         self._set_busy(False)
@@ -549,6 +565,11 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, error_msg: str):
         """背景任務發生錯誤"""
+        # 關閉進度對話框
+        if hasattr(self, "_progress_dialog") and self._progress_dialog:
+            self._progress_dialog.abort()
+            self._progress_dialog = None
+
         self._set_busy(False)
         self.progress_bar.setValue(0)
         self._show_status(f"錯誤：{error_msg}", error=True)
