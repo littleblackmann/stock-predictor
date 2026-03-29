@@ -68,20 +68,37 @@ UPDATE_PREFS = os.path.join(DATA_ROOT, "update_prefs.json")
 
 
 def get_current_version() -> str:
-    """讀取本地版本號
-    優先讀 exe 旁的 version.json（更新後會放這裡）；
-    找不到時改讀 _MEIPASS（PyInstaller 打包內建版本）。
+    """讀取本地版本號（從所有來源取最高版本）
+
+    來源：
+      1. _MEIPASS/version.json — PyInstaller 打包內的版本（xcopy 更新後會是新版）
+      2. APP_ROOT/version.json — bat 腳本寫入的版本（備援）
+
+    取最高版本號，防止任一來源漏更新時卡在舊版本。
     """
-    candidates = [VERSION_FILE]
+    candidates = []
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         candidates.append(os.path.join(sys._MEIPASS, "version.json"))
+    candidates.append(VERSION_FILE)
+
+    found_versions = []
     for path in candidates:
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f).get("version", "0.0.0")
+                v = json.load(f).get("version", "0.0.0")
+                if v != "0.0.0":
+                    found_versions.append(v)
         except Exception:
             continue
-    return "0.0.0"
+
+    if not found_versions:
+        return "0.0.0"
+
+    # 回傳最高版本（任一來源有正確版本就不會卡住）
+    try:
+        return max(found_versions, key=lambda v: [int(x) for x in v.split(".")])
+    except (ValueError, AttributeError):
+        return found_versions[0]
 
 
 def _get_update_config() -> dict:

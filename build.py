@@ -41,7 +41,7 @@ except Exception:
 
 OUTPUT_ZIP   = f"台股預測分析系統_v{APP_VERSION}.zip"
 PATCH_ZIP    = f"台股預測分析系統_v{APP_VERSION}_patch.zip"
-MANIFEST_SAVE = "build_manifest.json"  # 上一次打包的 manifest，留給下次比對
+MANIFEST_SAVE = f"build_manifest_v{APP_VERSION}.json"  # 每個版本獨立 manifest，重複打包不會覆蓋舊版基準線
 
 
 def check_env():
@@ -85,6 +85,53 @@ def generate_manifest(dist_dir: str) -> dict:
     return manifest
 
 
+def _find_previous_manifest(current_version: str) -> dict:
+    """
+    找到上一個版本的 manifest 作為 patch 基準線。
+    使用版本化檔名（build_manifest_v1.2.8.json），
+    重複打包同版本時不會覆蓋舊版的基準。
+    """
+    import glob
+
+    best_manifest = {}
+    best_version = None
+
+    # 搜尋所有版本化 manifest
+    for path in glob.glob("build_manifest_v*.json"):
+        fname = os.path.basename(path)
+        # build_manifest_v1.2.8.json → 1.2.8
+        ver = fname.replace("build_manifest_v", "").replace(".json", "")
+        if ver == current_version:
+            continue  # 跳過當前版本（可能是重複打包）
+        try:
+            ver_tuple = tuple(int(x) for x in ver.split("."))
+        except ValueError:
+            continue
+        if best_version is None or ver_tuple > best_version:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    best_manifest = json.load(f)
+                best_version = ver_tuple
+                best_path = path
+            except Exception:
+                continue
+
+    # Legacy：舊的 build_manifest.json（無版本號）
+    if not best_manifest and os.path.exists("build_manifest.json"):
+        try:
+            with open("build_manifest.json", "r", encoding="utf-8") as f:
+                best_manifest = json.load(f)
+            print(f"  載入舊版 manifest：build_manifest.json（{len(best_manifest)} 個檔案）")
+            return best_manifest
+        except Exception:
+            pass
+
+    if best_manifest:
+        print(f"  載入基準 manifest：{best_path}（v{'.'.join(str(x) for x in best_version)}，{len(best_manifest)} 個檔案）")
+
+    return best_manifest
+
+
 def create_patch_zip(dist_dir: str, old_manifest: dict, new_manifest: dict) -> str | None:
     """
     比對新舊 manifest，只把有變動的檔案打成 patch zip。
@@ -94,6 +141,12 @@ def create_patch_zip(dist_dir: str, old_manifest: dict, new_manifest: dict) -> s
     for relpath, new_hash in new_manifest.items():
         if relpath not in old_manifest or old_manifest[relpath] != new_hash:
             changed.append(relpath)
+
+    # 強制包含 version.json（更新版本號是最關鍵的，絕不能漏）
+    version_key = "_internal/version.json"
+    if version_key not in changed and version_key in new_manifest:
+        changed.append(version_key)
+        print(f"  [PATCH] 強制加入 {version_key}")
 
     if not changed:
         print("  [PATCH] 與上次打包完全相同，不產生 patch")
@@ -155,19 +208,12 @@ def build():
     new_manifest["manifest.json"] = _hash_file(manifest_in_dist)
 
     # ── 差量更新包 ──
-    old_manifest = {}
-    if os.path.exists(MANIFEST_SAVE):
-        try:
-            with open(MANIFEST_SAVE, "r", encoding="utf-8") as f:
-                old_manifest = json.load(f)
-            print(f"  載入上次 manifest（{len(old_manifest)} 個檔案）")
-        except Exception:
-            print("  上次 manifest 讀取失敗，跳過差量")
+    old_manifest = _find_previous_manifest(APP_VERSION)
 
     if old_manifest:
         create_patch_zip(DIST_DIR, old_manifest, new_manifest)
     else:
-        print("  [PATCH] 首次打包，無法產生差量更新包")
+        print("  [PATCH] 找不到前一版 manifest，無法產生差量更新包")
 
     # 儲存本次 manifest 供下次比對
     with open(MANIFEST_SAVE, "w", encoding="utf-8") as f:
