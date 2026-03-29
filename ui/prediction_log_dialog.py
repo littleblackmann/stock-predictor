@@ -74,14 +74,22 @@ class PredictionLogDialog(QDialog):
             }
             QTableWidget {
                 background-color: #1A1A1A;
+                alternate-background-color: #222222;
                 color: #E0E6F0;
                 gridline-color: #3A3A3A;
                 border: 1px solid #3A3A3A;
                 selection-background-color: #2A3A4A;
             }
             QTableWidget::item {
+                background-color: #1A1A1A;
                 padding: 4px 8px;
                 border-bottom: 1px solid #2A2A2A;
+            }
+            QTableWidget::item:alternate {
+                background-color: #222222;
+            }
+            QTableWidget::item:selected {
+                background-color: #2A3A4A;
             }
             QHeaderView::section {
                 background-color: #222222;
