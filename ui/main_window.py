@@ -145,9 +145,6 @@ class MainWindow(QMainWindow):
 
         root_layout.addLayout(content_layout, stretch=1)
 
-        # ── 進度列（圖表下方，明顯可見）──
-        root_layout.addWidget(self._build_progress_bar())
-
         # ── 狀態列 ──
         self._setup_status_bar()
 
@@ -481,12 +478,6 @@ class MainWindow(QMainWindow):
 
     def _on_progress(self, percent: int, message: str):
         """背景執行緒回報進度"""
-        self.progress_bar.setValue(percent)
-        self.big_progress_bar.setValue(percent)
-        self.big_progress_label.setText(message)
-        self.big_progress_label.setStyleSheet(
-            "color: #00AAFF; font-size: 13px; font-weight: bold;"
-        )
         self._show_status(message)
 
         # 同步更新進度對話框
@@ -511,11 +502,6 @@ class MainWindow(QMainWindow):
 
         self._display_result(result)
         self._set_busy(False)
-        self.big_progress_bar.setValue(0)
-        self.big_progress_label.setText("預測完成 ✓")
-        self.big_progress_label.setStyleSheet(
-            "color: #00FF88; font-size: 13px; font-weight: bold;"
-        )
 
         # 系統匣通知
         prediction = result.get("prediction", {})

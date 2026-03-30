@@ -1,9 +1,9 @@
 # 台股預測分析系統 — 專案現況
 
-> 最後更新：2026-03-28（Day 8，更新機制修正 + 差量更新）
+> 最後更新：2026-03-30（Day 10，Transformer 取代 LSTM + 更新機制修復 + 進度對話框 + Win10 修復）
 
 ## 目前版本
-v1.2.8（最新穩定版）
+v1.3.2（最新穩定版），Transformer 版本開發中（待打包為 v1.4.0）
 - 使用者資料已搬遷至 `%LOCALAPPDATA%/台股預測分析系統/`
 - 程式更新不再影響使用者的設定、模型、預測記錄
 - 內建自動更新檢查（GitHub Releases）— **已實測成功（v1.2.4 → v1.2.5）**
@@ -47,12 +47,34 @@ v1.2.8（最新穩定版）
   - [x] App Icon 統一設定（所有視窗繼承）
   - [x] Logo 顯示於 Splash 上方（Day 5，120px，RGBA 透明背景）
   - [x] App Icon 正確顯示於標題列與工作列（Day 5，多尺寸 ICO）
-- [x] 籌碼面特徵整合（Day 5）
+- [x] 籌碼面特徵整合（Day 5 + Day 9 強化）
   - [x] 三大法人淨買超（外資/投信/自營商）
   - [x] 融資融券餘額 + 增減
-  - [x] 7 個衍生特徵（含外資連續買超天數、軋空比等）
-  - [x] TWSE API + 本機快取，無縫降級機制
-  - [x] LightGBM 特徵從 13 維擴充至 20 維
+  - [x] 13 個衍生特徵（含二階：外資加速度、投信連續買超、籌碼共振、融資股價背離等）
+  - [x] TWSE API 修復（T86 + TWT93U 新格式，Session cookie，限流偵測）
+  - [x] 從最近日期往回抓 + 快取累積機制
+- [x] 市場行情狀態辨識（Day 9）
+  - [x] 多頭/空頭/盤整自動分類（MA20 vs MA60）
+  - [x] 趨勢強度、持續天數、波動率狀態
+  - [x] 盤整行情自動降級信心度
+  - [x] LightGBM 特徵從 20 維擴充至 36 維
+- [x] 預測進度對話框（Day 10）
+  - [x] Modal 深色無邊框圓角設計
+  - [x] 顯示步驟圖示、百分比、經過時間
+  - [x] 籌碼抓取逐日進度回報
+- [x] **Transformer 取代 LSTM**（Day 10，架構級升級）
+  - [x] 新增 `models/transformer_extractor.py`（3 層 Encoder，107K 參數）
+  - [x] 回看窗口 60 天 → 300 天（能捕捉季節性、跨月規律）
+  - [x] 輸入維度 17 → 28~41 維（含完整技術面+籌碼+行情）
+  - [x] 資料量 1500 → 2500 天（~7 年歷史）
+  - [x] 時間衰減權重（近 2 年 1.0 / 2~4年 0.7 / 4~6年 0.4）
+  - [x] 分批特徵萃取（避免記憶體爆掉）
+  - [x] LightGBM 搭配重訓防呆
+  - [x] 舊模型自動清理（`cleanup_legacy_models()`，使用者無感）
+  - [x] LSTM 保留作為備用退路
+- [x] Bug Fix：自動更新後版本號未更新（Day 10，三道防線）
+- [x] Bug Fix：Win10 預測記錄表格白色背景（Day 10）
+- [x] Bug Fix：差量更新包重複打包覆蓋基準線（Day 10）
 - [x] Bug Fix：needs_retrain() 未傳 symbol（Day 5）
 - [x] Bug Fix：TWSE API 大小寫問題（holiday_checker + chip_fetcher，Day 5）
 - [x] LightGBM 特徵維度防護（維度不符自動重訓，Day 5）
@@ -78,6 +100,20 @@ v1.2.8（最新穩定版）
   - [x] 刪除記錄、匯出 CSV
 
 ## 待討論 / 待決定
+
+## Day 10 已完成
+- [x] **★ Transformer 取代 LSTM**（模型架構升級，300天窗口，28~41維輸入，時間衰減權重）
+- [x] 資料量擴充 1500→2500 天（含美股同步擴充）
+- [x] 舊模型自動清理機制（LSTM→Transformer 無感遷移）
+- [x] 修復自動更新版本號未更新（build.py 版本化 manifest + auto_updater 取最高版本 + patch 強制含 version.json）
+- [x] 新增預測進度對話框（PredictionProgressDialog）
+- [x] 籌碼抓取 progress_callback 逐日回報
+- [x] 修復 Win10 預測記錄表格白色背景（styles.qss + prediction_log_dialog.py）
+- [x] v1.3.1 發佈（僅完整包，修更新機制）— 爸的 Win10 實測成功
+- [x] v1.3.2 發佈（full + patch，進度對話框 + Win10 表格修復）
+- [x] 移除底部進度條（已被預測進度對話框取代）
+- [x] 修復 QFont::setPointSize 警告（QComboBox 缺少 font-size stylesheet）
+- [x] Brave Search 查詢間隔 0.3s → 0.7s（避免免費方案 429 限速）
 
 ## Day 7 後半（2026-03-27 下午）— v1.2.0 補充
 - [x] 設定視窗新增「關於/更新」第三分頁
@@ -132,8 +168,9 @@ v1.2.8（最新穩定版）
 ### 準確度提升
 - [ ] 成交量異常偵測（volume_ratio = volume / volume_ma20，突然放量 2x 以上代表主力進出，預估 +1~2%）
 - [ ] 預測結果加權回饋（記錄每次預測的 SHAP top 5，統計哪些特徵組合預測最準，動態調整權重，meta-learning 概念）
-- [ ] 分市場狀態訓練（多頭/空頭/盤整各訓練專門模型，預測時先判斷市場狀態再用對應模型，預估 +3~5%）
-- [ ] Transformer 時序模型取代 LSTM（Attention 機制更能捕捉遠距離模式，開發成本較高，等系統穩定後再考慮）
+- [x] 分市場狀態建模（Day 9，市場行情特徵 + 盤整信心度降級，已整合進現有模型）
+- [ ] 分市場狀態訓練（進階：多頭/空頭/盤整各訓練專門模型，預測時先用對應模型）
+- [x] **Transformer 取代 LSTM**（Day 10，300天窗口 + 28~41維輸入 + 時間衰減權重）
 
 ### 美觀 / UX 改進
 - [ ] 儀表板首頁（打開時顯示「今日總覽」：自選股紅綠燈快速狀態、昨日預測回顧、累積準確率趨勢小圖、大盤指數快覽）
@@ -150,8 +187,9 @@ v1.2.8（最新穩定版）
 | UI | PySide6 + QSS 深色霓虹主題 |
 | 圖表 | TradingView Lightweight Charts（QWebEngineView） |
 | 資料 | yfinance（1500天 OHLCV）+ Brave Search（主）/ Google News RSS（備） |
-| 特徵 | 13維技術指標（RSI/MACD/布林/ATR/量比等） |
-| 模型 | LSTM(128→64) 時序萃取 + LightGBM Ensemble(×3) 融合分類 |
+| 特徵 | 36維（技術指標+籌碼面13維+市場行情4維+美股隔夜+多時間框架） |
+| 時序模型 | Transformer(3層 Encoder, 300天窗口) 時序萃取，取代 LSTM |
+| 分類模型 | LightGBM Ensemble(×3) 融合分類 |
 | AI分析 | OpenAI GPT（新聞情緒 + 3日走勢） |
 | 並發 | QThreadPool 背景執行緒 |
 | 日誌 | QueueHandler 非同步寫入 |
@@ -167,3 +205,5 @@ v1.2.8（最新穩定版）
 - [Day 6 (2026-03-24)](./2026-03-24.md) — Brave Search 深度新聞、情緒壓縮、模型自我進化機制
 - [Day 7 (2026-03-27)](./2026-03-27.md) — 程式/資料分離（AppData）、自動更新機制、inf Bug 修復
 - [Day 8 (2026-03-28)](./2026-03-28.md) — 更新機制修正、差量更新、Win10 相容性
+- [Day 9 (2026-03-29)](./2026-03-29.md) — 籌碼面特徵強化、分行情建模、TWSE API 修復
+- [Day 10 (2026-03-30)](./2026-03-30.md) — 更新機制根本修復、預測進度對話框、Win10 修復

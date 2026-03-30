@@ -107,3 +107,42 @@ def migrate_from_old_location():
     # 寫入遷移標記
     with open(marker, "w") as f:
         f.write("migrated")
+
+
+def cleanup_legacy_models():
+    """
+    LSTM → Transformer 遷移清理
+
+    v1.4.0 起模型架構從 LSTM 切換為 Transformer，
+    舊的 LSTM 模型和搭配 LSTM 訓練的 LightGBM 模型不再相容。
+    首次偵測到舊模型時自動清除，讓下次預測重新訓練。
+    """
+    marker = os.path.join(DATA_ROOT, ".transformer_migrated")
+    if os.path.exists(marker):
+        return
+
+    if not os.path.isdir(MODEL_DIR):
+        return
+
+    removed = []
+    for fname in os.listdir(MODEL_DIR):
+        fpath = os.path.join(MODEL_DIR, fname)
+        if not os.path.isfile(fpath):
+            continue
+        # 刪除舊 LSTM 模型
+        if fname.startswith("lstm_"):
+            os.remove(fpath)
+            removed.append(fname)
+        # 刪除搭配 LSTM 訓練的 LightGBM 模型（需要重訓）
+        elif fname.startswith("lgbm_"):
+            os.remove(fpath)
+            removed.append(fname)
+
+    if removed:
+        from logger.app_logger import get_logger
+        logger = get_logger(__name__)
+        logger.info(f"模型遷移：已清除 {len(removed)} 個舊模型（LSTM→Transformer），下次預測將自動重訓")
+
+    # 寫入標記，只清理一次
+    with open(marker, "w") as f:
+        f.write("transformer_v1.4.0")

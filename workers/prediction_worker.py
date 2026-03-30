@@ -11,7 +11,7 @@ from data.yfinance_adapter import YFinanceAdapter
 from data.news_sentiment import NewsSentimentAnalyzer
 from data.chip_fetcher import ChipFetcher
 from features.feature_engineer import FeatureEngineer
-from models.lstm_extractor import LSTMExtractor
+from models.transformer_extractor import TransformerExtractor
 from models.lgbm_classifier import LGBMClassifier
 from logger.app_logger import get_logger
 
@@ -38,12 +38,13 @@ class PredictionWorker(QRunnable):
     完整的預測流程背景工作器
 
     流程：
-    1. 下載歷史資料 (yfinance)
-    2. 計算技術指標 (FeatureEngineer)
-    3. 訓練或載入 LSTM 模型
-    4. 訓練或載入 LightGBM 模型
-    5. 執行推論，輸出預測機率
-    6. 透過訊號回傳結果給主執行緒
+    1. 下載歷史資料 (yfinance, 2500 天)
+    2. 抓取籌碼資料 + 美股隔夜資料
+    3. 計算技術指標 (FeatureEngineer)
+    4. 訓練或載入 Transformer 模型（300 天窗口）
+    5. 訓練或載入 LightGBM 模型
+    6. 新聞情緒分析 + 推論，輸出預測機率
+    7. 透過訊號回傳結果給主執行緒
     """
 
     def __init__(self, symbol: str, retrain: bool = False):
@@ -90,7 +91,7 @@ class PredictionWorker(QRunnable):
             adapter = YFinanceAdapter()
             df_raw = adapter.fetch_history(
                 symbol=self.symbol,
-                period_days=1500,  # ~6 年，累積式訓練：資料越多模型越穩
+                period_days=2500,  # ~7 年，Transformer 需要更多資料學習長期規律
                 progress_callback=lambda p, msg: self._emit_progress(p, msg)
             )
 
@@ -118,7 +119,7 @@ class PredictionWorker(QRunnable):
             self._emit_progress(46, "下載美股隔夜資料（S&P500 / 費半 / VIX）...")
 
             # ── 步驟 2.5：下載美股隔夜資料 ─────────────────────
-            us_data = self._download_us_market_data(1500)
+            us_data = self._download_us_market_data(2500)
 
             self._emit_progress(50, "計算技術指標 + 籌碼 + 美股 + 週線特徵...")
 
@@ -127,41 +128,41 @@ class PredictionWorker(QRunnable):
             df_features = engineer.build_features(df_raw, chip_df=chip_df, us_data=us_data)
 
             feature_cols      = engineer.get_feature_cols()
-            lstm_input_cols   = engineer.get_lstm_input_cols()
+            seq_input_cols    = engineer.get_transformer_input_cols()
 
             self._emit_progress(53, "技術指標計算完成")
 
-            # ── 步驟 3：LSTM 訓練 / 載入 ────────────────────────
-            lstm_extractor = LSTMExtractor(symbol=self.symbol)
-            lstm_loaded = False
+            # ── 步驟 3：Transformer 訓練 / 載入 ─────────────────
+            from models.transformer_extractor import SEQUENCE_LEN, OUTPUT_DIM
+            seq_extractor = TransformerExtractor(symbol=self.symbol)
+            seq_loaded = False
 
             if not self.retrain:
-                lstm_loaded = lstm_extractor.load()
-                # 特徵數防護：舊模型可能是 15 維，現在是 17 維
-                if lstm_loaded:
-                    expected_n = len(lstm_input_cols)
-                    scaler_n = getattr(lstm_extractor.scaler, "n_features_in_", None)
+                seq_loaded = seq_extractor.load()
+                # 特徵數防護：舊模型特徵維度不符時強制重訓
+                if seq_loaded:
+                    expected_n = len(seq_input_cols)
+                    scaler_n = getattr(seq_extractor.scaler, "n_features_in_", None)
                     if scaler_n is not None and scaler_n != expected_n:
-                        logger.info(f"LSTM 特徵數不符（模型={scaler_n}，當前={expected_n}），強制重訓")
-                        lstm_loaded = False
+                        logger.info(f"Transformer 特徵數不符（模型={scaler_n}，當前={expected_n}），強制重訓")
+                        seq_loaded = False
 
-            if not lstm_loaded:
-                self._emit_progress(55, "開始訓練 LSTM 時序模型（首次訓練需要幾分鐘）...")
-                lstm_extractor.train(
+            if not seq_loaded:
+                self._emit_progress(55, "開始訓練 Transformer 時序模型（首次訓練需要幾分鐘）...")
+                seq_extractor.train(
                     df=df_features,
-                    input_cols=lstm_input_cols,
+                    input_cols=seq_input_cols,
                     progress_callback=lambda p, msg: self._emit_progress(p, msg)
                 )
             else:
-                self._emit_progress(68, "LSTM 模型載入成功")
+                self._emit_progress(68, "Transformer 模型載入成功")
 
-            # ── 步驟 4：萃取全部時間步的 LSTM 特徵 ──────────────
-            self._emit_progress(70, "萃取 LSTM 時間特徵向量...")
+            # ── 步驟 4：萃取全部時間步的 Transformer 特徵 ───────
+            self._emit_progress(70, "萃取 Transformer 時間特徵向量...")
 
-            # 對所有訓練資料萃取 LSTM 特徵（用於訓練 LGBM）
-            from models.lstm_extractor import SEQUENCE_LEN
-            all_lstm_features = self._extract_all_lstm_features(
-                lstm_extractor, df_features, lstm_input_cols
+            # 對所有訓練資料萃取 Transformer 特徵（用於訓練 LGBM）
+            all_seq_features = self._extract_all_seq_features(
+                seq_extractor, df_features, seq_input_cols
             )
 
             # ── 步驟 5：LightGBM 訓練 / 載入 ────────────────────
@@ -170,15 +171,19 @@ class PredictionWorker(QRunnable):
 
             if not self.retrain:
                 # 傳入當前特徵數，維度不符時自動強制重訓
-                from models.lstm_extractor import LSTM_UNITS
-                expected_feats = LSTM_UNITS + len(feature_cols)
+                expected_feats = OUTPUT_DIM + len(feature_cols)
                 lgbm_loaded = lgbm_clf.load(expected_n_features=expected_feats)
+
+                # Transformer 剛訓練完 → LightGBM 必須重訓（舊模型是搭配 LSTM 的）
+                if lgbm_loaded and not seq_loaded:
+                    logger.info("Transformer 剛完成訓練，LightGBM 必須搭配重訓（特徵語義不同）")
+                    lgbm_loaded = False
 
             if not lgbm_loaded:
                 eval_metrics = lgbm_clf.train(
                     df=df_features,
                     feature_cols=feature_cols,
-                    lstm_features=all_lstm_features,
+                    lstm_features=all_seq_features,
                     progress_callback=lambda p, msg: self._emit_progress(p, msg)
                 )
             else:
@@ -193,7 +198,7 @@ class PredictionWorker(QRunnable):
             # ── 步驟 7：預測明天 ──────────────────────────────────
             self._emit_progress(92, "正在推論明日走勢...")
 
-            latest_lstm_feat = lstm_extractor.extract_features(df_features, lstm_input_cols)
+            latest_lstm_feat = seq_extractor.extract_features(df_features, seq_input_cols)
             latest_tech_feat = df_features[feature_cols].iloc[-1].values.reshape(1, -1)
 
             prediction = lgbm_clf.predict(latest_lstm_feat, latest_tech_feat)
@@ -328,30 +333,44 @@ class PredictionWorker(QRunnable):
             except RuntimeError:
                 pass
 
-    def _extract_all_lstm_features(self, lstm_extractor, df_features, lstm_input_cols) -> np.ndarray:
+    def _extract_all_seq_features(self, seq_extractor, df_features, input_cols) -> np.ndarray:
         """
-        對整個資料集批次萃取 LSTM 特徵
+        對整個資料集批次萃取 Transformer 特徵
         用於建構 LightGBM 的訓練特徵矩陣
         """
-        from models.lstm_extractor import SEQUENCE_LEN, LSTM_UNITS
+        from models.transformer_extractor import SEQUENCE_LEN, OUTPUT_DIM
 
-        if not lstm_extractor.is_trained:
+        if not seq_extractor.is_trained:
             n = len(df_features)
-            return np.zeros((n, LSTM_UNITS))
+            return np.zeros((n, OUTPUT_DIM))
 
-        feature_data = df_features[lstm_input_cols].values
-        scaled_data  = lstm_extractor.scaler.transform(feature_data)
+        feature_data = df_features[input_cols].values
+        scaled_data  = seq_extractor.scaler.transform(feature_data)
 
-        # 一次性建構所有滑動窗口 → shape: (n_windows, SEQUENCE_LEN, n_features)
+        # 建構所有滑動窗口 → shape: (n_windows, SEQUENCE_LEN, n_features)
         n_windows = len(scaled_data) - SEQUENCE_LEN + 1
-        windows = np.stack([
-            scaled_data[i: i + SEQUENCE_LEN]
-            for i in range(n_windows)
-        ])  # shape: (n_windows, 60, n_features)
 
-        # 單次批次推論，速度比迴圈快數十倍
-        all_features = lstm_extractor.feature_extractor.predict(windows, batch_size=256, verbose=0)
-        return all_features  # shape: (n_windows, LSTM_UNITS)
+        if n_windows <= 0:
+            logger.warning(f"資料不足以建構 {SEQUENCE_LEN} 天窗口，回傳空特徵")
+            return np.zeros((len(df_features), OUTPUT_DIM))
+
+        # Transformer 窗口較大（300），分批建構避免記憶體爆掉
+        BATCH_EXTRACT = 64
+        all_features_list = []
+
+        for batch_start in range(0, n_windows, BATCH_EXTRACT):
+            batch_end = min(batch_start + BATCH_EXTRACT, n_windows)
+            windows = np.stack([
+                scaled_data[i: i + SEQUENCE_LEN]
+                for i in range(batch_start, batch_end)
+            ])
+            batch_features = seq_extractor.feature_extractor.predict(
+                windows, batch_size=BATCH_EXTRACT, verbose=0
+            )
+            all_features_list.append(batch_features)
+
+        all_features = np.concatenate(all_features_list, axis=0)
+        return all_features  # shape: (n_windows, OUTPUT_DIM)
 
     def _download_us_market_data(self, period_days: int) -> dict | None:
         """

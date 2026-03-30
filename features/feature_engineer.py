@@ -6,8 +6,8 @@
 - 技術面基礎：13 維
 - 美股隔夜訊號：4 維（S&P500 報酬、費半報酬、VIX 水位、VIX 變化）
 - 多時間框架：2 維（週線趨勢、週 RSI）
-- 市場狀態辨識：1 維（多頭 / 空頭 / 盤整）
-- 籌碼面（選用）：7 維
+- 市場狀態辨識：4 維（行情狀態 / 趨勢強度 / 持續天數 / 波動率狀態）
+- 籌碼面（選用）：13 維（一階 7 + 二階 6）
 """
 import pandas as pd
 import numpy as np
@@ -29,6 +29,13 @@ CHIP_DERIVED = [
     "margin_change_pct",    # 融資增減 / 融資餘額
     "short_change_pct",     # 融券增減 / 融券餘額
     "short_margin_ratio",   # 融券 / 融資（軋空風險指標）
+    # ── 二階籌碼特徵 ──
+    "fi_accel",             # 外資買超加速度（近5日均值 vs 前5日均值）
+    "it_consecutive",       # 投信連續買超天數
+    "chip_sync",            # 籌碼共振（外資+投信同方向=1, 反向=-1, 其他=0）
+    "margin_price_diverge", # 融資股價背離（融資增+股價跌=-1, 融資減+股價漲=1）
+    "fi_net_ma5",           # 外資淨買超5日平滑
+    "it_net_ma5",           # 投信淨買超5日平滑
 ]
 
 # 美股隔夜訊號特徵
@@ -47,7 +54,10 @@ MULTIFRAME_FEATURES = [
 
 # 市場狀態辨識特徵
 REGIME_FEATURES = [
-    "market_regime",  # 1=多頭（Close>MA20>MA60）, -1=空頭, 0=盤整
+    "market_regime",      # 1=多頭（Close>MA20>MA60）, -1=空頭, 0=盤整
+    "regime_strength",    # 趨勢強度（MA20 vs MA60 距離 / 股價，越大趨勢越明確）
+    "regime_duration",    # 當前行情狀態持續天數
+    "volatility_regime",  # 波動率狀態（ATR 相對 60日 的百分位，0~1）
 ]
 
 
@@ -197,8 +207,38 @@ class FeatureEngineer:
             # 融券/融資比（越高代表空頭部位越重，容易軋空反彈）
             df["short_margin_ratio"] = df["short_balance"] / df["margin_balance"].replace(0, 1)
 
+            # ── 二階籌碼特徵 ──────────────────────────────────────
+
+            # 外資買超加速度：近5日均值 vs 前5日均值（正=加速買，負=減速或轉賣）
+            fi_ma5      = df["fi_net"].rolling(5).mean()
+            fi_ma5_prev = df["fi_net"].rolling(5).mean().shift(5)
+            df["fi_accel"] = (fi_ma5 - fi_ma5_prev) / (fi_ma5_prev.abs().replace(0, 1))
+            df["fi_accel"] = df["fi_accel"].clip(-3, 3).fillna(0)
+
+            # 投信連續買超天數
+            df["it_consecutive"] = self._calc_consecutive(df["it_net"])
+
+            # 籌碼共振：外資+投信同方向買超=1，同方向賣超=-1，方向不一致=0
+            fi_dir = np.sign(df["fi_net"])
+            it_dir = np.sign(df["it_net"])
+            df["chip_sync"] = np.where(
+                (fi_dir == it_dir) & (fi_dir != 0), fi_dir, 0
+            ).astype(float)
+
+            # 融資股價背離：融資增加但股價下跌=-1（散戶接刀），融資減少但股價上漲=1（籌碼安定）
+            price_dir  = np.sign(df["Close"].diff())
+            margin_dir = np.sign(df["margin_change"])
+            df["margin_price_diverge"] = np.where(
+                (margin_dir > 0) & (price_dir < 0), -1,
+                np.where((margin_dir < 0) & (price_dir > 0), 1, 0)
+            ).astype(float)
+
+            # 外資/投信 5日平滑淨買超（消除單日雜訊）
+            df["fi_net_ma5"] = df["fi_net_pct"].rolling(5).mean().fillna(0)
+            df["it_net_ma5"] = df["it_net_pct"].rolling(5).mean().fillna(0)
+
             self._has_chip = True
-            logger.info("籌碼特徵合併完成")
+            logger.info("籌碼特徵合併完成（含二階衍生特徵）")
         except Exception as e:
             logger.warning(f"籌碼特徵合併失敗，降級為純技術面：{e}")
             # 確保衍生欄位不殘留
@@ -329,11 +369,12 @@ class FeatureEngineer:
 
     def _build_market_regime(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        根據均線排列判斷市場狀態：
+        根據均線排列判斷市場狀態，並計算趨勢強度、持續天數、波動率狀態。
 
-        多頭（1）：Close > MA20 且 MA20 > MA60 → 趨勢向上
-        空頭（-1）：Close < MA20 且 MA20 < MA60 → 趨勢向下
-        盤整（0）：均線糾結，方向不明
+        market_regime:    1=多頭（Close>MA20>MA60）, -1=空頭, 0=盤整
+        regime_strength:  MA20 vs MA60 的距離 / 股價（趨勢明確度）
+        regime_duration:  當前行情持續天數（同一 regime 連續幾天）
+        volatility_regime: ATR 在 60 日中的百分位（0~1，高=波動大）
         """
         try:
             ma20 = df["Close"].rolling(20).mean()
@@ -346,6 +387,19 @@ class FeatureEngineer:
             choices = [1, -1]
             df["market_regime"] = np.select(conditions, choices, default=0)
 
+            # 趨勢強度：MA20 vs MA60 的距離 / 股價（越大趨勢越明確）
+            df["regime_strength"] = ((ma20 - ma60) / df["Close"]).fillna(0)
+
+            # 當前行情持續天數
+            df["regime_duration"] = self._calc_regime_duration(df["market_regime"])
+
+            # 波動率狀態：ATR 在最近 60 日的百分位排名 (0~1)
+            atr = df["atr"] if "atr" in df.columns else self._calc_atr(df, 14)
+            df["volatility_regime"] = atr.rolling(60).apply(
+                lambda x: pd.Series(x).rank(pct=True).iloc[-1] if len(x) >= 10 else 0.5,
+                raw=False
+            ).fillna(0.5)
+
             # 統計市場狀態分布
             regime_counts = df["market_regime"].value_counts()
             bull  = regime_counts.get(1, 0)
@@ -355,7 +409,22 @@ class FeatureEngineer:
         except Exception as e:
             logger.warning(f"市場狀態辨識失敗：{e}")
             df["market_regime"] = 0
+            df["regime_strength"] = 0
+            df["regime_duration"] = 0
+            df["volatility_regime"] = 0.5
         return df
+
+    @staticmethod
+    def _calc_regime_duration(regime_series: pd.Series) -> pd.Series:
+        """計算當前行情狀態的連續持續天數"""
+        result = [1] * len(regime_series)
+        vals = regime_series.values
+        for i in range(1, len(vals)):
+            if vals[i] == vals[i - 1]:
+                result[i] = result[i - 1] + 1
+            else:
+                result[i] = 1
+        return pd.Series(result, index=regime_series.index, dtype=float)
 
     def get_feature_cols(self) -> list:
         """
@@ -377,9 +446,9 @@ class FeatureEngineer:
         base += US_OVERNIGHT_FEATURES
         # 多時間框架（2 維，永遠包含）
         base += MULTIFRAME_FEATURES
-        # 市場狀態（1 維，永遠包含）
+        # 市場狀態（4 維，永遠包含）
         base += REGIME_FEATURES
-        # 籌碼面（7 維，選用）
+        # 籌碼面（13 維，選用）
         if self._has_chip:
             base += CHIP_DERIVED
         return base
@@ -402,6 +471,46 @@ class FeatureEngineer:
             # 美股隔夜訊號（2 維）
             "sp500_return", "sox_return",
         ]
+
+    def get_transformer_input_cols(self) -> list:
+        """
+        Transformer 時間序列輸入欄位。
+
+        相較 LSTM（17 維），Transformer 可有效處理更高維度輸入，
+        因此額外加入：
+          - 完整技術面特徵（MACD signal、成交量變化等）
+          - 美股完整隔夜訊號（含 VIX）
+          - 多時間框架特徵（週線動量）
+          - 市場行情狀態特徵
+          - 籌碼面衍生特徵（若有）
+
+        這讓 Transformer 的 Self-Attention 可以學到：
+          - 「法人連續買超 + RSI 低檔 + 盤整行情」→ 歷史上常是起漲訊號
+          - 「除權息季 + 融資增加 + VIX 低」→ 季節性模式
+        """
+        cols = [
+            # OHLCV（5 維）
+            "Open", "High", "Low", "Close", "Volume",
+            # 基礎技術面（13 維）
+            "log_return",
+            "ma5_cross_ma20",
+            "macd", "macd_signal", "macd_hist",
+            "rsi",
+            "bb_bandwidth", "bb_pct_b",
+            "atr_ratio",
+            "vol_ratio", "vol_change",
+            "high_low_ratio", "close_position",
+        ]
+        # 美股隔夜訊號（4 維）
+        cols += US_OVERNIGHT_FEATURES
+        # 多時間框架（2 維）
+        cols += MULTIFRAME_FEATURES
+        # 市場狀態（4 維）
+        cols += REGIME_FEATURES
+        # 籌碼面衍生特徵（13 維，若有）
+        if self._has_chip:
+            cols += CHIP_DERIVED
+        return cols
 
     # ─── 私有計算方法 ───────────────────────────────────────────────
 

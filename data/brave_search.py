@@ -110,7 +110,7 @@ class BraveSearchClient:
                         seen_urls.add(url)
                         all_results.append(r)
                 # 避免過快連續請求
-                time.sleep(0.3)
+                time.sleep(0.7)
             except Exception as e:
                 logger.warning(f"Brave Search 查詢失敗 [{query}]: {e}")
 

@@ -200,6 +200,13 @@ class SettingsDialog(QDialog):
 
         self.combo_model = QComboBox()
         self.combo_model.setFixedHeight(36)
+        self.combo_model.setStyleSheet(
+            "QComboBox { font-size: 13px; background: #2A2A2A; color: #E0E6F0; "
+            "border: 1px solid #3A3A3A; border-radius: 6px; padding: 4px 8px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { font-size: 13px; background: #2A2A2A; "
+            "color: #E0E6F0; selection-background-color: #3A5A3A; }"
+        )
 
         # GPT-5.4 系列
         self.combo_model.addItem("── GPT-5.4 系列（最新旗艦）──")
@@ -344,6 +351,19 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.4.0",
+                "date": "2026-03-30",
+                "changes": [
+                    "【重大升級】核心模型從 LSTM 升級為 Transformer（業界主流架構）",
+                    "分析窗口從 60 天大幅擴展至 300 天，可捕捉季節性與長期規律",
+                    "歷史資料量從 4 年擴充至 7 年（2,500 天），訓練樣本更充足",
+                    "Transformer 輸入從 17 維擴充至 28~41 維（含完整技術面 + 籌碼 + 行情）",
+                    "新增時間衰減權重，近期資料影響力更大，適應市場結構變化",
+                    "預估持續使用 2~3 個月後，準確率可達 65%~70% 參考水準",
+                    "首次啟動自動清理舊模型，無需手動操作",
+                ],
+            },
+            {
                 "version": "v1.3.2",
                 "date": "2026-03-30",
                 "changes": [
@@ -358,7 +378,7 @@ class SettingsDialog(QDialog):
                 "changes": [
                     "修復自動更新後版本號未更新的問題（不再無限跳更新通知）",
                     "修復差量更新包可能遺漏關鍵檔案的問題",
-                    "強化版本偵測機制，Win10/Win11 皆可穩定更新",
+                    "強化版本帶偵測機制，Win10/Win11 皆可穩定更新",
                 ],
             },
             {

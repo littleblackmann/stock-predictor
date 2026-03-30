@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>台股預測分析系統 — 儀表板首頁 Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #121212;
+    color: #E0E0E0;
+    font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 20px;
+    color: #888;
+    margin-bottom: 20px;
+    font-weight: 400;
+  }
+  h1 span { color: #E0E0E0; font-weight: 600; }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    max-width: 1100px;
+  }
+
+  /* Cards */
+  .card {
+    background: #1E1E1E;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #2A2A2A;
+  }
+  .card-title {
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Ring Chart */
+  .ring-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0;
+  }
+  .ring-wrap {
+    position: relative;
+    width: 140px;
+    height: 140px;
+  }
+  .ring-wrap svg {
+    transform: rotate(-90deg);
+  }
+  .ring-label {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .ring-label .pct {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .ring-label .sub {
+    font-size: 11px;
+    color: #888;
+    margin-top: 2px;
+  }
+  .ring-legend {
+    margin-top: 14px;
+    font-size: 12px;
+    color: #aaa;
+    text-align: center;
+  }
+  .ring-legend .up { color: #E74C3C; }
+  .ring-legend .down { color: #27AE60; }
+
+  /* Watchlist */
+  .stock-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #2A2A2A;
+  }
+  .stock-row:last-child { border-bottom: none; }
+  .stock-info .name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .stock-info .code {
+    font-size: 11px;
+    color: #888;
+  }
+  .stock-signal {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Mini ring for watchlist */
+  .mini-ring {
+    position: relative;
+    width: 38px;
+    height: 38px;
+  }
+  .mini-ring svg { transform: rotate(-90deg); }
+  .mini-ring .mini-label {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .badge-up { background: rgba(231,76,60,0.15); color: #E74C3C; }
+  .badge-down { background: rgba(39,174,96,0.15); color: #27AE60; }
+  .badge-flat { background: rgba(200,200,200,0.1); color: #aaa; }
+
+  /* Accuracy card */
+  .acc-big {
+    font-size: 42px;
+    font-weight: 700;
+    color: #00E676;
+    text-align: center;
+  }
+  .acc-sub {
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+    margin-top: 4px;
+  }
+  .acc-bar-wrap {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .acc-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .acc-bar-row .label {
+    font-size: 11px;
+    color: #aaa;
+    width: 52px;
+    text-align: right;
+  }
+  .acc-bar-track {
+    flex: 1;
+    height: 6px;
+    background: #2A2A2A;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .acc-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  /* Market overview */
+  .market-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #2A2A2A;
+  }
+  .market-row:last-child { border-bottom: none; }
+  .market-name { font-size: 13px; }
+  .market-val { font-size: 13px; font-weight: 600; }
+  .market-chg { font-size: 12px; margin-left: 8px; }
+  .red { color: #E74C3C; }
+  .green { color: #27AE60; }
+
+  /* Yesterday review */
+  .review-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #2A2A2A;
+  }
+  .review-row:last-child { border-bottom: none; }
+  .review-pred { font-size: 12px; }
+  .review-result {
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .correct { color: #00E676; }
+  .wrong { color: #E74C3C; }
+
+  /* Span 2 cols */
+  .span2 { grid-column: span 2; }
+
+  /* Section label */
+  .section-label {
+    grid-column: span 3;
+    font-size: 12px;
+    color: #555;
+    margin-top: 8px;
+    padding-bottom: 0;
+  }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+    .span2 { grid-column: span 1; }
+    .section-label { grid-column: span 1; }
+  }
+</style>
+</head>
+<body>
+
+<h1><span>今日總覽</span> — 2026/03/29 (六)</h1>
+
+<div class="grid">
+
+  <!-- Row 1: Main ring + Watchlist -->
+  <div class="card">
+    <div class="card-title">上次預測 — 2330 台積電</div>
+    <div class="ring-container">
+      <div class="ring-wrap">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="58" fill="none" stroke="#2A2A2A" stroke-width="12"/>
+          <circle cx="70" cy="70" r="58" fill="none" stroke="#E74C3C" stroke-width="12"
+                  stroke-dasharray="364.4" stroke-dashoffset="91.1"
+                  stroke-linecap="round"/>
+          <!-- green portion -->
+          <circle cx="70" cy="70" r="58" fill="none" stroke="#27AE60" stroke-width="12"
+                  stroke-dasharray="364.4" stroke-dashoffset="273.3"
+                  stroke-linecap="round" transform="rotate(270 70 70)" style="transform-origin:center; transform: rotate(180deg)"/>
+        </svg>
+        <div class="ring-label">
+          <div class="pct red">75%</div>
+          <div class="sub">看漲</div>
+        </div>
+      </div>
+      <div class="ring-legend">
+        <span class="up">● 漲 75%</span> &nbsp; <span class="down">● 跌 25%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card span2">
+    <div class="card-title">自選股快覽</div>
+
+    <div class="stock-row">
+      <div class="stock-info">
+        <div class="name">台積電</div>
+        <div class="code">2330.TW</div>
+      </div>
+      <div class="stock-signal">
+        <div class="mini-ring">
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#2A2A2A" stroke-width="4"/>
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#E74C3C" stroke-width="4"
+                    stroke-dasharray="94.2" stroke-dashoffset="23.6" stroke-linecap="round"/>
+          </svg>
+          <div class="mini-label red">75</div>
+        </div>
+        <span class="badge badge-up">看漲</span>
+      </div>
+    </div>
+
+    <div class="stock-row">
+      <div class="stock-info">
+        <div class="name">鴻海</div>
+        <div class="code">2317.TW</div>
+      </div>
+      <div class="stock-signal">
+        <div class="mini-ring">
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#2A2A2A" stroke-width="4"/>
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#E74C3C" stroke-width="4"
+                    stroke-dasharray="94.2" stroke-dashoffset="31.4" stroke-linecap="round"/>
+          </svg>
+          <div class="mini-label red">67</div>
+        </div>
+        <span class="badge badge-up">看漲</span>
+      </div>
+    </div>
+
+    <div class="stock-row">
+      <div class="stock-info">
+        <div class="name">聯發科</div>
+        <div class="code">2454.TW</div>
+      </div>
+      <div class="stock-signal">
+        <div class="mini-ring">
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#2A2A2A" stroke-width="4"/>
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#27AE60" stroke-width="4"
+                    stroke-dasharray="94.2" stroke-dashoffset="35.3" stroke-linecap="round"/>
+          </svg>
+          <div class="mini-label green">62</div>
+        </div>
+        <span class="badge badge-down">看跌</span>
+      </div>
+    </div>
+
+    <div class="stock-row">
+      <div class="stock-info">
+        <div class="name">台達電</div>
+        <div class="code">2308.TW</div>
+      </div>
+      <div class="stock-signal">
+        <div class="mini-ring">
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#2A2A2A" stroke-width="4"/>
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#888" stroke-width="4"
+                    stroke-dasharray="94.2" stroke-dashoffset="43.1" stroke-linecap="round"/>
+          </svg>
+          <div class="mini-label" style="color:#aaa">54</div>
+        </div>
+        <span class="badge badge-flat">觀望</span>
+      </div>
+    </div>
+
+    <div class="stock-row">
+      <div class="stock-info">
+        <div class="name">0050</div>
+        <div class="code">0050.TW</div>
+      </div>
+      <div class="stock-signal">
+        <div class="mini-ring">
+          <svg width="38" height="38" viewBox="0 0 38 38">
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#2A2A2A" stroke-width="4"/>
+            <circle cx="19" cy="19" r="15" fill="none" stroke="#E74C3C" stroke-width="4"
+                    stroke-dasharray="94.2" stroke-dashoffset="26.4" stroke-linecap="round"/>
+          </svg>
+          <div class="mini-label red">72</div>
+        </div>
+        <span class="badge badge-up">看漲</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: Accuracy + Market + Yesterday review -->
+  <div class="card">
+    <div class="card-title">累積準確率</div>
+    <div class="acc-big">64.2%</div>
+    <div class="acc-sub">最近 50 筆預測</div>
+    <div class="acc-bar-wrap">
+      <div class="acc-bar-row">
+        <span class="label">本週</span>
+        <div class="acc-bar-track">
+          <div class="acc-bar-fill" style="width:70%; background:#00E676;"></div>
+        </div>
+        <span style="font-size:11px; color:#00E676; width:32px;">70%</span>
+      </div>
+      <div class="acc-bar-row">
+        <span class="label">上週</span>
+        <div class="acc-bar-track">
+          <div class="acc-bar-fill" style="width:62%; background:#66BB6A;"></div>
+        </div>
+        <span style="font-size:11px; color:#66BB6A; width:32px;">62%</span>
+      </div>
+      <div class="acc-bar-row">
+        <span class="label">兩週前</span>
+        <div class="acc-bar-track">
+          <div class="acc-bar-fill" style="width:58%; background:#888;"></div>
+        </div>
+        <span style="font-size:11px; color:#888; width:32px;">58%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">大盤指數</div>
+    <div class="market-row">
+      <span class="market-name">加權指數</span>
+      <span>
+        <span class="market-val">22,458</span>
+        <span class="market-chg red">+186 (+0.83%)</span>
+      </span>
+    </div>
+    <div class="market-row">
+      <span class="market-name">櫃買指數</span>
+      <span>
+        <span class="market-val">238.65</span>
+        <span class="market-chg red">+2.31 (+0.98%)</span>
+      </span>
+    </div>
+    <div class="market-row">
+      <span class="market-name">台指期</span>
+      <span>
+        <span class="market-val">22,510</span>
+        <span class="market-chg red">+205</span>
+      </span>
+    </div>
+    <div class="market-row">
+      <span class="market-name">成交量</span>
+      <span>
+        <span class="market-val">3,842 億</span>
+        <span class="market-chg" style="color:#888;">+12%</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">昨日預測回顧</div>
+    <div class="review-row">
+      <div>
+        <div style="font-size:13px; font-weight:600;">2330 台積電</div>
+        <div class="review-pred">預測漲 72% → 實際 <span class="red">+1.2%</span></div>
+      </div>
+      <span class="review-result correct">&#10003; 正確</span>
+    </div>
+    <div class="review-row">
+      <div>
+        <div style="font-size:13px; font-weight:600;">2317 鴻海</div>
+        <div class="review-pred">預測漲 65% → 實際 <span class="red">+0.5%</span></div>
+      </div>
+      <span class="review-result correct">&#10003; 正確</span>
+    </div>
+    <div class="review-row">
+      <div>
+        <div style="font-size:13px; font-weight:600;">2454 聯發科</div>
+        <div class="review-pred">預測跌 61% → 實際 <span class="red">+0.8%</span></div>
+      </div>
+      <span class="review-result wrong">&#10007; 錯誤</span>
+    </div>
+    <div class="review-row">
+      <div>
+        <div style="font-size:13px; font-weight:600;">0050 元大50</div>
+        <div class="review-pred">預測漲 58% → 實際 <span class="green">-0.3%</span></div>
+      </div>
+      <span class="review-result wrong">&#10007; 錯誤</span>
+    </div>
+  </div>
+
+</div>
+
+<p style="margin-top: 32px; color: #555; font-size: 12px;">
+  * 這是靜態 Mockup，數據為假資料，僅供版面預覽用途
+</p>
+
+</body>
+</html>

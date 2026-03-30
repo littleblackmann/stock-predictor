@@ -124,8 +124,9 @@ class AppLoader(QThread):
 
 def main():
     # ── 資料路徑初始化：確保 AppData 資料夾存在，舊版資料自動遷移 ──
-    from data.data_paths import migrate_from_old_location
+    from data.data_paths import migrate_from_old_location, cleanup_legacy_models
     migrate_from_old_location()
+    cleanup_legacy_models()
 
     app = QApplication(sys.argv)
     app.setApplicationName("台股預測分析系統")

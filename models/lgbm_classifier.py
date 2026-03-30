@@ -317,7 +317,17 @@ class LGBMClassifier:
             "weekly_ma_trend":  "週線均線趨勢",
             "weekly_rsi":       "週線 RSI 強弱",
             # 市場狀態
-            "market_regime":    "市場狀態（多/空/盤）",
+            "market_regime":         "市場狀態（多/空/盤）",
+            "regime_strength":       "趨勢強度",
+            "regime_duration":       "行情持續天數",
+            "volatility_regime":     "波動率狀態",
+            # 二階籌碼特徵
+            "fi_accel":              "外資買超加速度",
+            "it_consecutive":        "投信連續買超天數",
+            "chip_sync":             "籌碼共振（外資+投信）",
+            "margin_price_diverge":  "融資股價背離",
+            "fi_net_ma5":            "外資淨買超5日均值",
+            "it_net_ma5":            "投信淨買超5日均值",
         }
         return labels.get(name, name)
 
