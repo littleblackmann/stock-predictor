@@ -131,12 +131,18 @@ def cleanup_legacy_models():
             continue
         # 刪除舊 LSTM 模型
         if fname.startswith("lstm_"):
-            os.remove(fpath)
-            removed.append(fname)
+            try:
+                os.remove(fpath)
+                removed.append(fname)
+            except OSError:
+                pass  # 檔案被鎖，下次再清
         # 刪除搭配 LSTM 訓練的 LightGBM 模型（需要重訓）
         elif fname.startswith("lgbm_"):
-            os.remove(fpath)
-            removed.append(fname)
+            try:
+                os.remove(fpath)
+                removed.append(fname)
+            except OSError:
+                pass
 
     if removed:
         from logger.app_logger import get_logger

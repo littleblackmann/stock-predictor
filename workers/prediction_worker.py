@@ -174,7 +174,7 @@ class PredictionWorker(QRunnable):
                 expected_feats = OUTPUT_DIM + len(feature_cols)
                 lgbm_loaded = lgbm_clf.load(expected_n_features=expected_feats)
 
-                # Transformer 剛訓練完 → LightGBM 必須重訓（舊模型是搭配 LSTM 的）
+                # Transformer 剛訓練完 → LightGBM 必須重訓（舊模型特徵語義不同）
                 if lgbm_loaded and not seq_loaded:
                     logger.info("Transformer 剛完成訓練，LightGBM 必須搭配重訓（特徵語義不同）")
                     lgbm_loaded = False
@@ -183,7 +183,7 @@ class PredictionWorker(QRunnable):
                 eval_metrics = lgbm_clf.train(
                     df=df_features,
                     feature_cols=feature_cols,
-                    lstm_features=all_seq_features,
+                    seq_features=all_seq_features,
                     progress_callback=lambda p, msg: self._emit_progress(p, msg)
                 )
             else:
@@ -198,10 +198,10 @@ class PredictionWorker(QRunnable):
             # ── 步驟 7：預測明天 ──────────────────────────────────
             self._emit_progress(92, "正在推論明日走勢...")
 
-            latest_lstm_feat = seq_extractor.extract_features(df_features, seq_input_cols)
+            latest_seq_feat = seq_extractor.extract_features(df_features, seq_input_cols)
             latest_tech_feat = df_features[feature_cols].iloc[-1].values.reshape(1, -1)
 
-            prediction = lgbm_clf.predict(latest_lstm_feat, latest_tech_feat)
+            prediction = lgbm_clf.predict(latest_seq_feat, latest_tech_feat)
 
             # ── 信心篩選機制 ─────────────────────────────────────────
             # 根據 Ensemble 模型的一致性（std）和距離 50% 的幅度判斷信心
@@ -287,7 +287,7 @@ class PredictionWorker(QRunnable):
 
             # SHAP 解析
             explanations = lgbm_clf.get_shap_explanation(
-                latest_lstm_feat, latest_tech_feat, feature_cols
+                latest_seq_feat, latest_tech_feat, feature_cols
             )
 
             # ── 步驟 8：整理圖表資料 ──────────────────────────────

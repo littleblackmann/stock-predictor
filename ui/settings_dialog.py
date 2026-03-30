@@ -133,7 +133,7 @@ class SettingsDialog(QDialog):
         # 警語框
         warning = QLabel(
             "⚠  API Key 為選填。\n"
-            "不填入仍可使用技術面預測（LSTM + LightGBM），\n"
+            "不填入仍可使用技術面預測（Transformer + LightGBM），\n"
             "但將停用「AI 新聞情緒分析」與「未來 3 日走勢」功能。"
         )
         warning.setWordWrap(True)
@@ -252,7 +252,7 @@ class SettingsDialog(QDialog):
         # ── 功能簡介 ──
         layout.addWidget(self._make_section_title("功能簡介"))
         layout.addWidget(self._make_guide_text(
-            "本系統結合 LSTM 深度學習與 LightGBM 機器學習模型，\n"
+            "本系統結合 Transformer 深度學習與 LightGBM 機器學習模型，\n"
             "透過技術面指標、籌碼面數據、美股隔夜訊號等 84 維特徵，\n"
             "對台股個股進行明日漲跌預測。\n\n"
             "若設定 OpenAI API Key，可額外啟用：\n"
@@ -350,6 +350,14 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {
+                "version": "v1.4.1",
+                "date": "2026-03-30",
+                "changes": [
+                    "修復 K 線圖日期缺少當天資料的問題",
+                    "修復偶發啟動閃退問題（檔案鎖定保護 + 背景載入容錯）",
+                ],
+            },
             {
                 "version": "v1.4.0",
                 "date": "2026-03-30",

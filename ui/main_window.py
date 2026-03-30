@@ -189,7 +189,7 @@ class MainWindow(QMainWindow):
         self.btn_predict = QPushButton("▶  預測明天")
         self.btn_predict.setObjectName("btnPredict")
         self.btn_predict.setFixedHeight(36)
-        self.btn_predict.setToolTip("下載最新資料並執行 LSTM + LightGBM 模型預測")
+        self.btn_predict.setToolTip("下載最新資料並執行 Transformer + LightGBM 模型預測")
         layout.addWidget(self.btn_predict)
 
         # 預測記錄按鈕

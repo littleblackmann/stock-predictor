@@ -45,7 +45,7 @@ class YFinanceAdapter:
 
         Args:
             symbol: 股票代號（如 0050 或 0050.TW）
-            period_days: 往前抓取幾天的資料（需 > 60 以供 LSTM 使用）
+            period_days: 往前抓取幾天的資料（需 > 300 以供 Transformer 使用）
             progress_callback: 進度回呼函數 (int 0-100, str 訊息)
 
         Returns:
@@ -59,7 +59,7 @@ class YFinanceAdapter:
             progress_callback(10, f"正在連線 Yahoo Finance，下載 {symbol}...")
 
         try:
-            end_date = datetime.today()
+            end_date = datetime.today() + timedelta(days=1)  # yfinance end 是 exclusive，+1 才能含今天
             start_date = end_date - timedelta(days=period_days)
 
             ticker = yf.Ticker(symbol)

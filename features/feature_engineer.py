@@ -1,6 +1,6 @@
 """
 特徵工程模組
-計算技術指標，建構供 LSTM + LightGBM 使用的特徵矩陣
+計算技術指標，建構供 Transformer + LightGBM 使用的特徵矩陣
 
 特徵維度：
 - 技術面基礎：13 維
@@ -455,9 +455,8 @@ class FeatureEngineer:
 
     def get_lstm_input_cols(self) -> list:
         """
-        LSTM 時間序列輸入欄位（OHLCV + 技術特徵 + 美股隔夜訊號）。
-        籌碼/週線/市場狀態特徵不放進 LSTM，只給 LightGBM 使用。
-        美股隔夜的 sp500_return / sox_return 是日頻時序，適合 LSTM 學習。
+        舊版 LSTM 時間序列輸入欄位（17 維，已棄用）。
+        保留供向下相容，新版請使用 get_transformer_input_cols()。
         """
         return [
             "Open", "High", "Low", "Close", "Volume",

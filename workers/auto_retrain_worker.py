@@ -1,7 +1,7 @@
 """
 自動重訓工作器
 根據 PredictionLogger.check_auto_retrain_candidates() 回傳的清單，
-在背景靜默重訓指定股票的 LSTM + LightGBM 模型，不顯示進度條、不影響 UI。
+在背景靜默重訓指定股票的 Transformer + LightGBM 模型，不顯示進度條、不影響 UI。
 完成後透過 Signal 通知主視窗更新狀態列。
 """
 import traceback
@@ -12,7 +12,7 @@ from PySide6.QtCore import QRunnable, QObject, Signal
 from data.yfinance_adapter import YFinanceAdapter
 from data.chip_fetcher import ChipFetcher
 from features.feature_engineer import FeatureEngineer
-from models.lstm_extractor import LSTMExtractor, SEQUENCE_LEN, LSTM_UNITS
+from models.transformer_extractor import TransformerExtractor, SEQUENCE_LEN, OUTPUT_DIM
 from models.lgbm_classifier import LGBMClassifier
 from logger.app_logger import get_logger
 
@@ -43,9 +43,9 @@ class AutoRetrainWorker(QRunnable):
             try:
                 logger.info(f"[AutoRetrain] 開始重訓：{symbol}")
 
-                # 1. 下載資料
+                # 1. 下載資料（2500 天，供 Transformer 300 天窗口使用）
                 adapter = YFinanceAdapter()
-                df_raw  = adapter.fetch_history(symbol=symbol, period_days=1500)
+                df_raw  = adapter.fetch_history(symbol=symbol, period_days=2500)
 
                 # 2. 籌碼資料
                 try:
@@ -62,30 +62,36 @@ class AutoRetrainWorker(QRunnable):
                 engineer        = FeatureEngineer()
                 df_features     = engineer.build_features(df_raw, chip_df=chip_df)
                 feature_cols    = engineer.get_feature_cols()
-                lstm_input_cols = engineer.get_lstm_input_cols()
+                seq_input_cols  = engineer.get_transformer_input_cols()
 
-                # 3. 重訓 LSTM
-                lstm = LSTMExtractor(symbol=symbol)
-                lstm.train(df=df_features, input_cols=lstm_input_cols)
+                # 4. 重訓 Transformer
+                seq_extractor = TransformerExtractor(symbol=symbol)
+                seq_extractor.train(df=df_features, input_cols=seq_input_cols)
 
-                # 4. 批次萃取 LSTM 特徵（供 LightGBM 使用）
-                feature_data = df_features[lstm_input_cols].values
-                scaled_data  = lstm.scaler.transform(feature_data)
+                # 5. 批次萃取 Transformer 特徵（供 LightGBM 使用）
+                feature_data = df_features[seq_input_cols].values
+                scaled_data  = seq_extractor.scaler.transform(feature_data)
                 n_windows    = len(scaled_data) - SEQUENCE_LEN + 1
-                windows      = np.stack([
-                    scaled_data[i: i + SEQUENCE_LEN]
-                    for i in range(n_windows)
-                ])
-                all_lstm_features = lstm.feature_extractor.predict(
-                    windows, batch_size=256, verbose=0
-                )
+                BATCH_EXTRACT = 64
+                all_seq_features_list = []
+                for start in range(0, n_windows, BATCH_EXTRACT):
+                    end = min(start + BATCH_EXTRACT, n_windows)
+                    batch_windows = np.stack([
+                        scaled_data[i: i + SEQUENCE_LEN]
+                        for i in range(start, end)
+                    ])
+                    batch_feats = seq_extractor.feature_extractor.predict(
+                        batch_windows, batch_size=BATCH_EXTRACT, verbose=0
+                    )
+                    all_seq_features_list.append(batch_feats)
+                all_seq_features = np.concatenate(all_seq_features_list, axis=0)
 
-                # 5. 重訓 LightGBM
+                # 6. 重訓 LightGBM
                 lgbm = LGBMClassifier(symbol=symbol)
                 lgbm.train(
                     df=df_features,
                     feature_cols=feature_cols,
-                    lstm_features=all_lstm_features,
+                    seq_features=all_seq_features,
                 )
 
                 success += 1

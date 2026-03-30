@@ -47,7 +47,7 @@ class WelcomeDialog(QDialog):
         title.setStyleSheet("color: #FFFFFF;")
         banner_layout.addWidget(title)
 
-        subtitle = QLabel("LSTM + LightGBM 雙模型智慧預測平台")
+        subtitle = QLabel("Transformer + LightGBM 雙模型智慧預測平台")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("color: #7A9ABE; font-size: 13px;")
         banner_layout.addWidget(subtitle)

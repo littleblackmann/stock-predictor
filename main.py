@@ -5,9 +5,10 @@
 技術架構：
   - UI：PySide6 + QSS 深色霓虹主題
   - 圖表：TradingView Lightweight Charts（via QWebEngineView）
-  - 資料：yfinance（歷史 OHLCV）
-  - 特徵：RSI, MACD, 布林通道, ATR, 量比等 13 維技術特徵
-  - 模型：LSTM 時序特徵萃取 + LightGBM 融合分類
+  - 資料：yfinance（歷史 2,500 天 OHLCV）+ TWSE API（籌碼面）+ Brave Search（新聞）
+  - 特徵：36 維（技術面 + 籌碼面 + 美股隔夜 + 市場行情）
+  - 模型：Transformer（3 層 Encoder，300 天窗口）時序萃取 + LightGBM Ensemble 分類
+  - AI：OpenAI GPT 新聞情緒分析 + 3 日走勢推估
   - 解析：SHAP 可解釋性分析
   - 並發：QThreadPool 背景執行緒
   - 日誌：QueueHandler 非同步寫入
@@ -118,15 +119,19 @@ class AppLoader(QThread):
                 f"AppLoader 載入失敗:\n{traceback.format_exc()}"
             )
             self.sig.step.emit("載入失敗，請查看 logs 資料夾")
+            self.sig.done.emit()  # 必須發射 done，否則主視窗永遠不出現
 
 
 # ── 主程式 ────────────────────────────────────────────────────────
 
 def main():
     # ── 資料路徑初始化：確保 AppData 資料夾存在，舊版資料自動遷移 ──
-    from data.data_paths import migrate_from_old_location, cleanup_legacy_models
-    migrate_from_old_location()
-    cleanup_legacy_models()
+    try:
+        from data.data_paths import migrate_from_old_location, cleanup_legacy_models
+        migrate_from_old_location()
+        cleanup_legacy_models()
+    except Exception:
+        pass  # 遷移/清理失敗不應阻擋啟動，下次再試
 
     app = QApplication(sys.argv)
     app.setApplicationName("台股預測分析系統")

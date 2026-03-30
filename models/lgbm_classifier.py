@@ -1,6 +1,6 @@
 """
 LightGBM 分類器（自我進化版）
-融合 LSTM 時間特徵向量 + 橫截面技術/籌碼特徵，進行明日漲跌二元分類
+融合 Transformer 時間特徵向量 + 橫截面技術/籌碼特徵，進行明日漲跌二元分類
 
 自我進化機制：
 - Ensemble 投票：TimeSeriesSplit 訓練 3 個模型，平均預測
@@ -39,7 +39,7 @@ class LGBMClassifier:
     """
     LightGBM 漲跌分類器（Ensemble 版）
 
-    輸入特徵 = LSTM 時間特徵向量（64維）+ 今日技術面特徵（13維）
+    輸入特徵 = Transformer 時間特徵向量（64維）+ 今日技術面特徵（13維）
     輸出 = 上漲機率 [0.0, 1.0]（3 個模型平均）
     """
 
@@ -94,7 +94,7 @@ class LGBMClassifier:
         self,
         df: pd.DataFrame,
         feature_cols: list,
-        lstm_features: np.ndarray,   # shape: (n_samples, 64)
+        seq_features: np.ndarray,   # shape: (n_samples, 64)
         label_col: str = "label",
         progress_callback=None
     ) -> dict:
@@ -103,19 +103,19 @@ class LGBMClassifier:
         若有上一代模型，以 init_model 進行增量式訓練。
         """
         if progress_callback:
-            progress_callback(68, "正在合併 LSTM 特徵與技術特徵...")
+            progress_callback(68, "正在合併 Transformer 特徵與技術特徵...")
 
         # 取出技術面特徵
         tech_features = df[feature_cols].values
 
-        # 對齊長度（LSTM 需要 60 個 timestep 才能開始，所以行數較少）
-        n = min(len(tech_features), len(lstm_features))
+        # 對齊長度（Transformer 需要 300 個 timestep 才能開始，所以行數較少）
+        n = min(len(tech_features), len(seq_features))
         tech_features  = tech_features[-n:]
-        lstm_feat_trim = lstm_features[-n:]
+        seq_feat_trim = seq_features[-n:]
         labels = df[label_col].values[-n:]
 
         # 合併特徵
-        X = np.concatenate([lstm_feat_trim, tech_features], axis=1)
+        X = np.concatenate([seq_feat_trim, tech_features], axis=1)
         y = labels
 
         # ── 載入上一代模型作為增量學習基礎 ──
@@ -204,8 +204,8 @@ class LGBMClassifier:
         # 特徵重要性（用最後一個 fold，最具代表性）
         if hasattr(last_model, "feature_importances_"):
             importances = last_model.feature_importances_
-            lstm_names = [f"lstm_{i}" for i in range(lstm_feat_trim.shape[1])]
-            all_names  = lstm_names + feature_cols
+            seq_names = [f"seq_{i}" for i in range(seq_feat_trim.shape[1])]
+            all_names  = seq_names + feature_cols
             self.feature_importances = dict(zip(all_names, importances.tolist()))
 
         logger.info(f"Ensemble 訓練完成 | 平均準確率：{avg_acc:.4f} | 平均 F1：{avg_f1:.4f}"
@@ -218,7 +218,7 @@ class LGBMClassifier:
 
         return self.eval_metrics
 
-    def predict(self, lstm_feature: np.ndarray, tech_feature: np.ndarray) -> dict:
+    def predict(self, seq_feature: np.ndarray, tech_feature: np.ndarray) -> dict:
         """
         Ensemble 預測：所有模型各自預測，取平均機率。
         """
@@ -226,7 +226,7 @@ class LGBMClassifier:
             logger.error("模型尚未訓練，無法預測")
             return {"up_prob": 0.5, "down_prob": 0.5, "prediction": -1}
 
-        X = np.concatenate([lstm_feature, tech_feature], axis=1)
+        X = np.concatenate([seq_feature, tech_feature], axis=1)
 
         all_probs = []
         for model, scaler in self.models:
@@ -251,18 +251,18 @@ class LGBMClassifier:
                     f"  分散度={std_prob:.4f}")
         return result
 
-    def get_shap_explanation(self, lstm_feature: np.ndarray, tech_feature: np.ndarray, feature_cols: list) -> list:
+    def get_shap_explanation(self, seq_feature: np.ndarray, tech_feature: np.ndarray, feature_cols: list) -> list:
         """
         使用 SHAP 計算特徵貢獻度（使用最後一個 fold 的模型）
         返回前 5 大影響因子的說明文字列表
         """
         try:
             import shap
-            X = np.concatenate([lstm_feature, tech_feature], axis=1)
+            X = np.concatenate([seq_feature, tech_feature], axis=1)
             X_scaled = self.scaler.transform(X)
 
-            lstm_names = [f"lstm_{i}" for i in range(lstm_feature.shape[1])]
-            all_names  = lstm_names + feature_cols
+            seq_names = [f"seq_{i}" for i in range(seq_feature.shape[1])]
+            all_names  = seq_names + feature_cols
 
             explainer   = shap.TreeExplainer(self.model)
             shap_values = explainer.shap_values(X_scaled)
@@ -272,8 +272,8 @@ class LGBMClassifier:
             else:
                 shap_vals = shap_values[0]
 
-            # 取前 5 大絕對貢獻的技術面特徵（跳過 LSTM 潛藏特徵）
-            tech_start = lstm_feature.shape[1]
+            # 取前 5 大絕對貢獻的技術面特徵（跳過 Transformer 潛藏特徵）
+            tech_start = seq_feature.shape[1]
             tech_shap  = shap_vals[tech_start:]
             top_idx    = np.argsort(np.abs(tech_shap))[::-1][:5]
 
