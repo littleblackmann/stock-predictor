@@ -351,6 +351,14 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.4.2",
+                "date": "2026-04-01",
+                "changes": [
+                    "修復預測記錄漲跌%顯示 0.00% 或 nan% 的問題",
+                    "已回填的錯誤記錄會自動重新計算",
+                ],
+            },
+            {
                 "version": "v1.4.1",
                 "date": "2026-03-30",
                 "changes": [

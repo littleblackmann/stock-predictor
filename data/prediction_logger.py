@@ -83,7 +83,11 @@ class PredictionLogger:
         if not rows:
             return 0
 
-        pending = [(i, r) for i, r in enumerate(rows) if not r.get("actual")]
+        pending = [
+            (i, r) for i, r in enumerate(rows)
+            if not r.get("actual")
+            or r.get("actual_return") in ("", "0.00", "nan")
+        ]
         if not pending:
             return 0
 
@@ -122,9 +126,9 @@ class PredictionLogger:
                     if target_date > today:
                         continue
 
-                    # pred_close: 預測當天的收盤價（往後找最近交易日）
-                    # target_close: 隔天的收盤價（往後找最近交易日）
-                    pred_close   = PredictionLogger._near_price(price_map, pred_date, "after")
+                    # pred_close: 預測當天（或之前最近交易日）的收盤價作為基準
+                    # target_close: 隔天（或之後最近交易日）的收盤價
+                    pred_close   = PredictionLogger._near_price(price_map, pred_date, "before")
                     target_close = PredictionLogger._near_price(price_map, target_date, "after")
 
                     if pred_close is None or target_close is None:
@@ -184,11 +188,14 @@ class PredictionLogger:
 
     @staticmethod
     def _near_price(price_map: dict, target: date, direction: str) -> float | None:
-        """找最近的交易日收盤價（最多找 7 天）"""
+        """找最近的交易日收盤價（最多找 7 天，跳過 NaN）"""
+        import math
         for delta in range(0, 8):
             d = target + timedelta(days=delta if direction == "after" else -delta)
             if d in price_map:
-                return price_map[d]
+                val = price_map[d]
+                if val is not None and not math.isnan(val):
+                    return val
         return None
 
     @staticmethod
