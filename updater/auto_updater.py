@@ -242,6 +242,12 @@ def download_and_apply(download_url: str, new_version: str,
         else:
             source_dir = extract_dir
 
+        # ── 預寫 version.json 到解壓目錄 ──
+        # 在 Python 端寫好，xcopy 會一起複製，避免 bat 用 echo 寫中文路徑失敗
+        ver_in_source = os.path.join(source_dir, "version.json")
+        with open(ver_in_source, "w", encoding="utf-8") as vf:
+            json.dump({"version": new_version}, vf)
+
         # ── 寫更新批次腳本 ──
         # 因為 exe 正在執行，不能直接覆蓋自己
         # 寫一個 bat 腳本：強制結束程式 → 覆蓋 → 重新啟動
@@ -249,16 +255,17 @@ def download_and_apply(download_url: str, new_version: str,
         exe_path = sys.executable if getattr(sys, "frozen", False) else "python"
         pid = os.getpid()
 
+        # 用短路徑避免 bat 中文路徑編碼問題
+        # source_dir 和 tmp_dir 在 %TEMP% 下（純 ASCII），不受影響
         with open(bat_path, "w", encoding="utf-8") as bat:
             bat.write(f"""@echo off
 chcp 65001 >nul
 echo ======================================
-echo   台股預測分析系統 — 正在更新...
+echo   Updating...
 echo ======================================
 echo.
 
 REM 等待主程式退出（最多 15 秒）
-echo 等待程式結束 (PID={pid})...
 set /a WAITED=0
 :WAIT_LOOP
 tasklist /FI "PID eq {pid}" 2>nul | find /i "{pid}" >nul
@@ -269,32 +276,22 @@ set /a WAITED+=1
 goto WAIT_LOOP
 
 :FORCE_KILL
-echo 程式未自行結束，強制終止...
 taskkill /F /PID {pid} >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 :PROCESS_DEAD
-echo 程式已結束，開始覆蓋檔案...
-
-REM 覆蓋程式檔案
+REM 覆蓋程式檔案（version.json 已在 source 中，xcopy 會一起複製）
 xcopy /E /Y /I "{source_dir}\\*" "{APP_ROOT}\\" >nul 2>&1
 if errorlevel 1 (
-    echo [錯誤] 檔案覆蓋失敗！
+    echo [Error] xcopy failed
     pause
     goto CLEANUP
 )
 
-REM 更新版本號（用 > 寫入 UTF-8 檔案）
->"{os.path.join(APP_ROOT, "version.json")}" (
-    echo {{"version": "{new_version}"}}
-)
-
-echo.
-echo 更新完成！正在重新啟動...
+echo Update complete, restarting...
 start "" "{exe_path}"
 
 :CLEANUP
-REM 清理暫存
 timeout /t 3 /nobreak >nul
 rd /s /q "{tmp_dir}" >nul 2>&1
 del "%~f0" >nul 2>&1
