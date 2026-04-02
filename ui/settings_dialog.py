@@ -351,6 +351,14 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.4.3",
+                "date": "2026-04-03",
+                "changes": [
+                    "修復預測記錄無法回填實際結果的問題（BOM 編碼汙染）",
+                    "回填失敗不再靜默，改為記錄警告日誌方便排查",
+                ],
+            },
+            {
                 "version": "v1.4.2",
                 "date": "2026-04-01",
                 "changes": [

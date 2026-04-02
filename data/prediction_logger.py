@@ -10,9 +10,13 @@ import os
 from collections import defaultdict
 from datetime import date, timedelta
 
+import logging
+
 import yfinance as yf
 
 from data.data_paths import PREDICTION_LOG as LOG_PATH, COOLDOWN_PATH
+
+logger = logging.getLogger(__name__)
 
 FIELDS = [
     "prediction_date",   # 執行預測當天 YYYY-MM-DD
@@ -52,8 +56,10 @@ class PredictionLogger:
             "correct":         "",
         }
 
-        file_exists = os.path.exists(LOG_PATH)
-        with open(LOG_PATH, "a", newline="", encoding="utf-8-sig") as f:
+        file_exists = os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0
+        with open(LOG_PATH, "a", newline="", encoding="utf-8") as f:
+            # 注意：不用 utf-8-sig，因為 append 模式會在每次寫入前插入 BOM，
+            # 導致第 2 筆以後的 prediction_date 被 BOM 汙染，backfill 會靜默失敗
             writer = csv.DictWriter(f, fieldnames=FIELDS)
             if not file_exists:
                 writer.writeheader()
@@ -66,7 +72,13 @@ class PredictionLogger:
         if not os.path.exists(LOG_PATH):
             return []
         with open(LOG_PATH, "r", encoding="utf-8-sig") as f:
-            return list(csv.DictReader(f))
+            rows = list(csv.DictReader(f))
+        # 清除舊版 BOM append 汙染：prediction_date 前可能殘留 \ufeff
+        for r in rows:
+            pd = r.get("prediction_date", "")
+            if pd.startswith("\ufeff"):
+                r["prediction_date"] = pd.lstrip("\ufeff")
+        return rows
 
     # ── 回填 actual ───────────────────────────────────────────────
 
@@ -142,7 +154,8 @@ class PredictionLogger:
                     rows[i]["correct"]       = str(actual == row["predicted"])
                     filled += 1
 
-            except Exception:
+            except Exception as e:
+                logger.warning("backfill %s 失敗: %s", symbol, e)
                 continue
 
         if filled > 0:
@@ -200,7 +213,7 @@ class PredictionLogger:
 
     @staticmethod
     def _save_all(rows: list[dict]) -> None:
-        with open(LOG_PATH, "w", newline="", encoding="utf-8-sig") as f:
+        with open(LOG_PATH, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS)
             writer.writeheader()
             writer.writerows(rows)
