@@ -6,6 +6,7 @@ LightGBM 分類器（自我進化版）
 - Ensemble 投票：TimeSeriesSplit 訓練 3 個模型，平均預測
 - 增量式訓練：retrain 時以上一代模型為基礎繼續訓練
 - 特徵自動篩選：min_gain_to_split 自動忽略雜訊特徵
+- 分市場狀態訓練：多頭/空頭/盤整各訓練專門模型，預測時混合
 """
 import os
 import json
@@ -28,6 +29,11 @@ AUTO_RETRAIN_DAYS = 7
 
 # Ensemble 模型數量
 ENSEMBLE_SIZE = 3
+
+# 分市場狀態訓練
+REGIME_MIN_SAMPLES = 200   # 某行情至少要有 200 筆才值得訓練專門模型
+REGIME_BLEND_WEIGHT = 0.35  # 行情模型佔 35%，主模型佔 65%
+REGIME_NAMES = {1: "bull", -1: "bear", 0: "side"}
 
 
 def _symbol_to_filename(symbol: str) -> str:
@@ -81,10 +87,21 @@ class LGBMClassifier:
         self._legacy_scaler_path = os.path.join(MODEL_DIR, f"lgbm_{_name}_scaler.pkl")
         self._ts_path = os.path.join(MODEL_DIR, f"lgbm_{_name}_timestamp.json")
 
+        # 分市場狀態模型路徑
+        self._regime_model_paths = {
+            regime: os.path.join(MODEL_DIR, f"lgbm_{_name}_regime_{tag}.pkl")
+            for regime, tag in REGIME_NAMES.items()
+        }
+        self._regime_scaler_paths = {
+            regime: os.path.join(MODEL_DIR, f"lgbm_{_name}_regime_{tag}_scaler.pkl")
+            for regime, tag in REGIME_NAMES.items()
+        }
+
         # Ensemble 狀態
         self.models = []     # list of (model, scaler) tuples
         self.model = None    # 向下相容：指向最後一個 fold 的 model（SHAP 用）
         self.scaler = None   # 向下相容：指向最後一個 fold 的 scaler（SHAP 用）
+        self.regime_models = {}  # {regime_int: (model, scaler)}
         self.is_trained = False
         self.feature_importances = {}
         self.eval_metrics = {}
@@ -211,6 +228,12 @@ class LGBMClassifier:
         logger.info(f"Ensemble 訓練完成 | 平均準確率：{avg_acc:.4f} | 平均 F1：{avg_f1:.4f}"
                     + (" | 增量學習" if len(prev_models) > 0 else " | 全新訓練"))
         self.is_trained = True
+
+        # ── 分市場狀態訓練 ──
+        if progress_callback:
+            progress_callback(82, "分市場狀態訓練中...")
+        regime_stats = self._train_regime_models(X, y, df, feature_cols, n)
+
         self._save()
 
         if progress_callback:
@@ -218,9 +241,60 @@ class LGBMClassifier:
 
         return self.eval_metrics
 
-    def predict(self, seq_feature: np.ndarray, tech_feature: np.ndarray) -> dict:
+    def _train_regime_models(self, X, y, df, feature_cols, n):
+        """
+        分市場狀態訓練：針對多頭/空頭/盤整各訓練一個專門的 LightGBM。
+        只在該行情有足夠樣本（>= REGIME_MIN_SAMPLES）時才訓練。
+        """
+        self.regime_models = {}
+        if "market_regime" not in df.columns:
+            return {}
+
+        regimes = df["market_regime"].values[-n:]
+        stats = {}
+
+        # 較小的模型：避免小樣本過擬合
+        regime_params = {**self.LGBM_PARAMS, "n_estimators": 200, "num_leaves": 15}
+
+        for regime_val, regime_name in REGIME_NAMES.items():
+            mask = regimes == regime_val
+            count = int(mask.sum())
+            stats[regime_name] = count
+
+            if count < REGIME_MIN_SAMPLES:
+                logger.info(f"行情模型 [{regime_name}] 跳過：僅 {count} 筆（需 {REGIME_MIN_SAMPLES}）")
+                continue
+
+            X_regime = X[mask]
+            y_regime = y[mask]
+
+            scaler = RobustScaler()
+            X_scaled = scaler.fit_transform(X_regime)
+
+            # 80/20 split（保持時間順序）
+            split = int(len(X_scaled) * 0.8)
+            X_tr, X_te = X_scaled[:split], X_scaled[split:]
+            y_tr, y_te = y_regime[:split], y_regime[split:]
+
+            model = lgb.LGBMClassifier(**regime_params)
+            model.fit(
+                X_tr, y_tr,
+                eval_set=[(X_te, y_te)],
+                callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(0)],
+            )
+
+            acc = accuracy_score(y_te, model.predict(X_te))
+            self.regime_models[regime_val] = (model, scaler)
+            logger.info(f"行情模型 [{regime_name}] 訓練完成 | {count} 筆 | 準確率 {acc:.1%}")
+
+        logger.info(f"行情模型統計：多頭={stats.get('bull',0)} 空頭={stats.get('bear',0)} 盤整={stats.get('side',0)}")
+        return stats
+
+    def predict(self, seq_feature: np.ndarray, tech_feature: np.ndarray,
+                current_regime: int | None = None) -> dict:
         """
         Ensemble 預測：所有模型各自預測，取平均機率。
+        若有行情專用模型且 current_regime 已知，混合預測（65% 主模型 + 35% 行情模型）。
         """
         if not self.is_trained or not self.models:
             logger.error("模型尚未訓練，無法預測")
@@ -228,15 +302,32 @@ class LGBMClassifier:
 
         X = np.concatenate([seq_feature, tech_feature], axis=1)
 
+        # ── 主 Ensemble 預測 ──
         all_probs = []
         for model, scaler in self.models:
             X_scaled = scaler.transform(X)
             prob = model.predict_proba(X_scaled)[0]
-            all_probs.append(prob[1])  # 上漲機率
+            all_probs.append(prob[1])
 
-        avg_up_prob   = float(np.mean(all_probs))
+        main_up_prob = float(np.mean(all_probs))
+        std_prob     = float(np.std(all_probs))
+
+        # ── 行情專用模型混合 ──
+        regime_tag = None
+        if current_regime is not None and current_regime in self.regime_models:
+            regime_model, regime_scaler = self.regime_models[current_regime]
+            X_regime_scaled = regime_scaler.transform(X)
+            regime_prob = float(regime_model.predict_proba(X_regime_scaled)[0][1])
+            regime_tag = REGIME_NAMES.get(current_regime, "?")
+
+            # 混合：主模型 65% + 行情模型 35%
+            blended = main_up_prob * (1 - REGIME_BLEND_WEIGHT) + regime_prob * REGIME_BLEND_WEIGHT
+            logger.info(f"行情模型混合 [{regime_tag}]：主={main_up_prob:.1%} 行情={regime_prob:.1%} → 混合={blended:.1%}")
+            avg_up_prob = blended
+        else:
+            avg_up_prob = main_up_prob
+
         avg_down_prob = 1.0 - avg_up_prob
-        std_prob      = float(np.std(all_probs))
 
         result = {
             "up_prob":      round(avg_up_prob, 4),
@@ -245,6 +336,8 @@ class LGBMClassifier:
             "model_probs":  [round(p, 4) for p in all_probs],
             "ensemble_std": round(std_prob, 4),
         }
+        if regime_tag:
+            result["regime_used"] = regime_tag
 
         detail = " | ".join([f"M{i+1}={p:.1%}" for i, p in enumerate(all_probs)])
         logger.info(f"預測結果：上漲 {avg_up_prob:.1%} / 下跌 {avg_down_prob:.1%}（{detail}）"
@@ -328,6 +421,11 @@ class LGBMClassifier:
             "margin_price_diverge":  "融資股價背離",
             "fi_net_ma5":            "外資淨買超5日均值",
             "it_net_ma5":            "投信淨買超5日均值",
+            # 成交量異常偵測
+            "vol_anomaly":           "成交量 Z-score 異常",
+            "vol_breakout":          "爆量突破訊號",
+            "vol_price_diverge":     "量價背離",
+            "vol_trend":             "量能趨勢",
         }
         return labels.get(name, name)
 
@@ -381,10 +479,14 @@ class LGBMClassifier:
             self.scaler = models[-1][1]
             self.is_trained = True
 
+            # 載入行情專用模型
+            self._load_regime_models(expected_n_features)
+
             # 載入 eval_metrics
             self._load_eval_metrics()
 
-            logger.info(f"Ensemble 模型載入成功（{self.symbol}，{len(models)} 個模型）")
+            regime_info = f"，行情模型：{list(self.regime_models.keys())}" if self.regime_models else ""
+            logger.info(f"Ensemble 模型載入成功（{self.symbol}，{len(models)} 個模型{regime_info}）")
             return True
         except Exception as e:
             logger.error(f"Ensemble 模型載入失敗：{e}")
@@ -420,6 +522,25 @@ class LGBMClassifier:
             logger.error(f"LightGBM 模型載入失敗：{e}")
             return False
 
+    def _load_regime_models(self, expected_n_features: int | None = None):
+        """載入行情專用模型"""
+        self.regime_models = {}
+        for regime_val in REGIME_NAMES:
+            m_path = self._regime_model_paths[regime_val]
+            s_path = self._regime_scaler_paths[regime_val]
+            if not os.path.exists(m_path) or not os.path.exists(s_path):
+                continue
+            try:
+                model = joblib.load(m_path)
+                scaler = joblib.load(s_path)
+                if expected_n_features is not None:
+                    saved_n = getattr(model, "n_features_in_", None)
+                    if saved_n is not None and saved_n != expected_n_features:
+                        continue  # 特徵數不符，跳過
+                self.regime_models[regime_val] = (model, scaler)
+            except Exception:
+                continue
+
     def _load_previous_ensemble(self) -> list:
         """
         載入上一代的 Ensemble 模型，用於增量學習的 init_model。
@@ -446,7 +567,7 @@ class LGBMClassifier:
         return prev_models
 
     def _save(self):
-        """儲存 Ensemble 模型"""
+        """儲存 Ensemble 模型 + 行情專用模型"""
         os.makedirs(MODEL_DIR, exist_ok=True)
 
         for i, (model, scaler) in enumerate(self.models):
@@ -458,16 +579,25 @@ class LGBMClassifier:
             joblib.dump(self.models[-1][0], self._legacy_model_path)
             joblib.dump(self.models[-1][1], self._legacy_scaler_path)
 
+        # 儲存行情專用模型
+        regime_saved = []
+        for regime_val, (model, scaler) in self.regime_models.items():
+            joblib.dump(model,  self._regime_model_paths[regime_val])
+            joblib.dump(scaler, self._regime_scaler_paths[regime_val])
+            regime_saved.append(REGIME_NAMES.get(regime_val, str(regime_val)))
+
         # 儲存 timestamp + eval_metrics
         ts_data = {
             "trained_at": datetime.now().isoformat(),
             "ensemble_size": len(self.models),
             "eval_metrics": self.eval_metrics,
+            "regime_models": regime_saved,
         }
         with open(self._ts_path, "w") as f:
             json.dump(ts_data, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"Ensemble 模型已儲存（{self.symbol}，{len(self.models)} 個模型）")
+        regime_info = f"，行情模型：{regime_saved}" if regime_saved else ""
+        logger.info(f"Ensemble 模型已儲存（{self.symbol}，{len(self.models)} 個模型{regime_info}）")
 
     def _load_eval_metrics(self):
         """從 timestamp JSON 載入 eval_metrics"""

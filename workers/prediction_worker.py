@@ -201,16 +201,17 @@ class PredictionWorker(QRunnable):
             latest_seq_feat = seq_extractor.extract_features(df_features, seq_input_cols)
             latest_tech_feat = df_features[feature_cols].iloc[-1].values.reshape(1, -1)
 
-            prediction = lgbm_clf.predict(latest_seq_feat, latest_tech_feat)
+            # 取出最新一筆的市場狀態特徵（供行情專用模型混合 + 信心篩選）
+            latest_regime = float(df_features["market_regime"].iloc[-1])
+
+            prediction = lgbm_clf.predict(latest_seq_feat, latest_tech_feat,
+                                          current_regime=int(latest_regime))
 
             # ── 信心篩選機制 ─────────────────────────────────────────
             # 根據 Ensemble 模型的一致性（std）和距離 50% 的幅度判斷信心
             # 並考慮市場行情狀態：盤整盤本來就難預測，自動降級信心
             ensemble_std = prediction.get("ensemble_std", 0)
             distance_from_50 = abs(prediction["up_prob"] - 0.5)
-
-            # 取出最新一筆的市場狀態特徵
-            latest_regime = float(df_features["market_regime"].iloc[-1])
             if "volatility_regime" in df_features.columns:
                 latest_vol_regime = float(df_features["volatility_regime"].iloc[-1])
             else:

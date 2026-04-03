@@ -1,9 +1,9 @@
 # 台股預測分析系統 — 專案現況
 
-> 最後更新：2026-03-30（Day 10，Transformer 取代 LSTM + 更新機制修復 + 進度對話框 + Win10 修復）
+> 最後更新：2026-04-03（Day 12，BOM 修復 + 成交量異常偵測 + 分市場狀態訓練）
 
 ## 目前版本
-v1.4.0（程式碼已完成，**待打包上傳**）— Transformer 取代 LSTM + 全專案引用清理
+v1.5.0（**已上傳 GitHub Release**）— 成交量異常偵測 + 分市場狀態訓練
 - 使用者資料已搬遷至 `%LOCALAPPDATA%/台股預測分析系統/`
 - 程式更新不再影響使用者的設定、模型、預測記錄
 - 內建自動更新檢查（GitHub Releases）— **已實測成功（v1.2.4 → v1.2.5）**
@@ -102,36 +102,34 @@ v1.4.0（程式碼已完成，**待打包上傳**）— Transformer 取代 LSTM 
 
 ## 待討論 / 待決定
 
-## ⚡ 下次開工第一件事：打包 v1.4.0 並上傳 GitHub
+## Day 12 已完成（2026-04-03）
+- [x] 修復預測記錄 BOM 編碼汙染（utf-8-sig append 模式導致回填永遠失敗）
+- [x] 修復自動更新 bat 腳本中文路徑導致無限重啟循環
+- [x] CSV 資料救援（從截圖重建 26 筆記錄，全數回填成功）
+- [x] **v1.4.3 打包上傳**（兩次，第二次含更新機制修復）
+- [x] **成交量異常偵測**（4 維新特徵：Z-score、爆量突破、量價背離、量能趨勢）
+- [x] **分市場狀態訓練**（多頭/空頭/盤整各訓練 LightGBM，預測時 65/35 混合）
+- [x] SHAP 中文標籤更新（4 個量能特徵）
+- [x] **v1.5.0 打包上傳**
 
-> v1.4.0 所有程式碼已完成，只差打包與上傳。
+## Day 11 已完成（2026-04-01）
+- [x] 修復 K 線圖日期缺少當天資料（yfinance end exclusive，+1 day）
+- [x] 修復啟動偶發閃退（啟動序列 try/except + AppLoader done signal + os.remove 保護）
+- [x] **v1.4.1 打包上傳**
+- [x] 修復預測記錄漲跌%顯示 0.00%（pred_close 方向 after→before）
+- [x] 修復預測記錄漲跌%顯示 nan%（_near_price NaN 過濾）
+- [x] 錯誤回填記錄自動重算機制
+- [x] **v1.4.2 打包上傳**
 
-```bash
-# 1. git commit & push（程式碼已改好）
-# 2. 打包
-./venv_stock/Scripts/python.exe build.py
-# 3. 上傳 GitHub Release
-"/c/Program Files/GitHub CLI/gh.exe" release create v1.4.0 \
-  "台股預測分析系統_v1.4.0.zip" \
-  "台股預測分析系統_v1.4.0_patch.zip" \
-  --title "v1.4.0 — Transformer 模型架構升級" \
-  --notes "核心模型升級為業界主流 Transformer 架構..."
-```
-
-## Day 10 已完成
+## Day 10 已完成（2026-03-30）
 - [x] **★ Transformer 取代 LSTM**（模型架構升級，300天窗口，28~41維輸入，時間衰減權重）
 - [x] 資料量擴充 1500→2500 天（含美股同步擴充）
 - [x] 舊模型自動清理機制（LSTM→Transformer 無感遷移）
-- [x] **全專案 LSTM 引用清理**（8 個檔案：lgbm_classifier / feature_engineer / auto_retrain_worker / prediction_worker / main_window / welcome_dialog / settings_dialog / yfinance_adapter）
-- [x] 修復自動更新版本號未更新（build.py 版本化 manifest + auto_updater 取最高版本 + patch 強制含 version.json）
+- [x] **全專案 LSTM 引用清理**（8 個檔案）
+- [x] 修復自動更新版本號未更新
 - [x] 新增預測進度對話框（PredictionProgressDialog）
-- [x] 籌碼抓取 progress_callback 逐日回報
-- [x] 修復 Win10 預測記錄表格白色背景（styles.qss + prediction_log_dialog.py）
-- [x] v1.3.1 發佈（僅完整包，修更新機制）— 爸的 Win10 實測成功
-- [x] v1.3.2 發佈（full + patch，進度對話框 + Win10 表格修復）
-- [x] 移除底部進度條（已被預測進度對話框取代）
-- [x] 修復 QFont::setPointSize 警告（QComboBox 缺少 font-size stylesheet）
-- [x] Brave Search 查詢間隔 0.3s → 0.7s（避免免費方案 429 限速）
+- [x] 修復 Win10 預測記錄表格白色背景
+- [x] v1.3.1 / v1.3.2 發佈
 
 ## Day 7 後半（2026-03-27 下午）— v1.2.0 補充
 - [x] 設定視窗新增「關於/更新」第三分頁
@@ -184,10 +182,10 @@ v1.4.0（程式碼已完成，**待打包上傳**）— Transformer 取代 LSTM 
 ## 待開發功能（未來可選）
 
 ### 準確度提升
-- [ ] 成交量異常偵測（volume_ratio = volume / volume_ma20，突然放量 2x 以上代表主力進出，預估 +1~2%）
+- [x] 成交量異常偵測（Day 12，Z-score + 爆量突破 + 量價背離 + 量能趨勢，4 維新特徵）
 - [ ] 預測結果加權回饋（記錄每次預測的 SHAP top 5，統計哪些特徵組合預測最準，動態調整權重，meta-learning 概念）
 - [x] 分市場狀態建模（Day 9，市場行情特徵 + 盤整信心度降級，已整合進現有模型）
-- [ ] 分市場狀態訓練（進階：多頭/空頭/盤整各訓練專門模型，預測時先用對應模型）
+- [x] 分市場狀態訓練（Day 12，多頭/空頭/盤整各訓練 LightGBM，65/35 混合預測）
 - [x] **Transformer 取代 LSTM**（Day 10，300天窗口 + 28~41維輸入 + 時間衰減權重）
 
 ### 美觀 / UX 改進
@@ -205,9 +203,9 @@ v1.4.0（程式碼已完成，**待打包上傳**）— Transformer 取代 LSTM 
 | UI | PySide6 + QSS 深色霓虹主題 |
 | 圖表 | TradingView Lightweight Charts（QWebEngineView） |
 | 資料 | yfinance（2500天 OHLCV）+ Brave Search（主）/ Google News RSS（備） |
-| 特徵 | 28~41維（技術指標13+籌碼面13+市場行情4+美股隔夜4+多時間框架2+OHLCV 5） |
+| 特徵 | 32~45維（技術指標13+量能異常4+籌碼面13+市場行情4+美股隔夜4+多時間框架2+OHLCV 5） |
 | 時序模型 | Transformer(3層 Encoder, 300天窗口) 時序萃取，取代 LSTM |
-| 分類模型 | LightGBM Ensemble(×3) 融合分類 |
+| 分類模型 | LightGBM Ensemble(×3) + 行情專用模型(×3) 融合分類 |
 | AI分析 | OpenAI GPT（新聞情緒 + 3日走勢） |
 | 並發 | QThreadPool 背景執行緒 |
 | 日誌 | QueueHandler 非同步寫入 |
@@ -225,3 +223,5 @@ v1.4.0（程式碼已完成，**待打包上傳**）— Transformer 取代 LSTM 
 - [Day 8 (2026-03-28)](./2026-03-28.md) — 更新機制修正、差量更新、Win10 相容性
 - [Day 9 (2026-03-29)](./2026-03-29.md) — 籌碼面特徵強化、分行情建模、TWSE API 修復
 - [Day 10 (2026-03-30)](./2026-03-30.md) — **Transformer 取代 LSTM**、LSTM 引用清理、更新機制修復、進度對話框
+- [Day 11 (2026-04-01)](./2026-04-01.md) — Bug 修復三連發（K線日期+啟動閃退+漲跌%）、v1.4.1 / v1.4.2 上傳
+- [Day 12 (2026-04-03)](./2026-04-03.md) — BOM 編碼修復 + 自動更新重啟循環修復 + CSV 資料救援、v1.4.3 上傳

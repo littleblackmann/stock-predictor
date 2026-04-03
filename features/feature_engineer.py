@@ -3,7 +3,7 @@
 計算技術指標，建構供 Transformer + LightGBM 使用的特徵矩陣
 
 特徵維度：
-- 技術面基礎：13 維
+- 技術面基礎：17 維（含成交量異常偵測 4 維）
 - 美股隔夜訊號：4 維（S&P500 報酬、費半報酬、VIX 水位、VIX 變化）
 - 多時間框架：2 維（週線趨勢、週 RSI）
 - 市場狀態辨識：4 維（行情狀態 / 趨勢強度 / 持續天數 / 波動率狀態）
@@ -132,6 +132,22 @@ class FeatureEngineer:
         df["vol_ma5"]      = df["Volume"].rolling(window=5).mean()
         df["vol_ratio"]    = df["Volume"] / df["vol_ma5"]              # 量比（今量/5日均量）
         df["vol_change"]   = df["Volume"].pct_change()                 # 成交量變化率
+
+        # --- 成交量異常偵測（4 維）---
+        vol_ma20 = df["Volume"].rolling(window=20).mean()
+        vol_std20 = df["Volume"].rolling(window=20).std()
+        df["vol_anomaly"]  = (df["Volume"] - vol_ma20) / vol_std20.replace(0, np.nan)  # Z-score：>2 爆量，<-1.5 極度縮量
+        df["vol_breakout"] = (df["Volume"] > vol_ma20 * 2).astype(float)               # 爆量旗標：量 > 20日均量 2 倍
+        df["vol_price_diverge"] = np.where(
+            (df["vol_ratio"] > 1.5) & (df["Close"].pct_change().abs() < 0.005),
+            1.0,   # 量增價不動 → 主力吃貨/出貨
+            np.where(
+                (df["vol_ratio"] < 0.5) & (df["Close"].pct_change().abs() > 0.02),
+                -1.0,  # 量縮價大動 → 假突破
+                0.0,
+            ),
+        )
+        df["vol_trend"] = (df["vol_ma5"] / vol_ma20).fillna(1.0)  # 短期量能趨勢：>1 量能增溫，<1 量能萎縮
 
         # --- 價格位置特徵 ---
         df["high_low_ratio"] = (df["High"] - df["Low"]) / df["Close"]  # 當日振幅
@@ -432,7 +448,7 @@ class FeatureEngineer:
         包含：基礎技術面 + 美股隔夜 + 多時間框架 + 市場狀態 + 籌碼（選用）
         """
         base = [
-            # 基礎技術面（13 維）
+            # 基礎技術面（17 維，含成交量異常偵測）
             "log_return",
             "ma5_cross_ma20",
             "macd", "macd_signal", "macd_hist",
@@ -441,6 +457,8 @@ class FeatureEngineer:
             "atr_ratio",
             "vol_ratio", "vol_change",
             "high_low_ratio", "close_position",
+            # 成交量異常偵測（4 維）
+            "vol_anomaly", "vol_breakout", "vol_price_diverge", "vol_trend",
         ]
         # 美股隔夜訊號（4 維，永遠包含）
         base += US_OVERNIGHT_FEATURES
@@ -490,7 +508,7 @@ class FeatureEngineer:
         cols = [
             # OHLCV（5 維）
             "Open", "High", "Low", "Close", "Volume",
-            # 基礎技術面（13 維）
+            # 基礎技術面（17 維，含成交量異常偵測）
             "log_return",
             "ma5_cross_ma20",
             "macd", "macd_signal", "macd_hist",
@@ -499,6 +517,8 @@ class FeatureEngineer:
             "atr_ratio",
             "vol_ratio", "vol_change",
             "high_low_ratio", "close_position",
+            # 成交量異常偵測（4 維）
+            "vol_anomaly", "vol_breakout", "vol_price_diverge", "vol_trend",
         ]
         # 美股隔夜訊號（4 維）
         cols += US_OVERNIGHT_FEATURES
