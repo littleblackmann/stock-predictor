@@ -351,11 +351,18 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.5.3",
+                "date": "2026-04-10",
+                "changes": [
+                    "修復多筆記錄刪除無效的問題",
+                ],
+            },
+            {
                 "version": "v1.5.2",
                 "date": "2026-04-10",
                 "changes": [
-                    "修復即時行情顯示 nan（get_latest_price 啟用 repair + NaN 過濾）",
-                    "修復 K 線圖缺少當日 K 棒（fetch_history 啟用 repair 模式）",
+                    "修復即時行情顯示 nan",
+                    "修復 K 線圖缺少當日 K 棒",
                 ],
             },
             {

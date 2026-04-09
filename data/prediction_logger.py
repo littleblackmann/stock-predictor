@@ -231,19 +231,21 @@ class PredictionLogger:
         return None
 
     @staticmethod
-    def _save_all(rows: list[dict]) -> None:
-        # 寫入前重新讀取 CSV，合併期間可能被 append() 新增的記錄，
+    def _save_all(rows: list[dict], merge_protect: bool = True) -> None:
+        # merge_protect=True：寫入前重新讀取 CSV，合併期間可能被 append() 新增的記錄，
         # 避免 backfill 背景執行緒覆蓋掉新追加的預測。
-        on_disk = PredictionLogger.load_all()
-        known_keys = {
-            (r.get("prediction_date", ""), r.get("symbol", ""))
-            for r in rows
-        }
-        for disk_row in on_disk:
-            key = (disk_row.get("prediction_date", ""), disk_row.get("symbol", ""))
-            if key not in known_keys:
-                rows.append(disk_row)
-                logger.info("_save_all 合併漏失記錄：%s %s", *key)
+        # merge_protect=False：直接寫入（用於刪除操作，否則被刪的記錄會被合併回來）。
+        if merge_protect:
+            on_disk = PredictionLogger.load_all()
+            known_keys = {
+                (r.get("prediction_date", ""), r.get("symbol", ""))
+                for r in rows
+            }
+            for disk_row in on_disk:
+                key = (disk_row.get("prediction_date", ""), disk_row.get("symbol", ""))
+                if key not in known_keys:
+                    rows.append(disk_row)
+                    logger.info("_save_all 合併漏失記錄：%s %s", *key)
 
         with open(LOG_PATH, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS)
@@ -262,7 +264,7 @@ class PredictionLogger:
         rows = PredictionLogger.load_all()
         to_delete = set(row_indices)
         rows = [r for i, r in enumerate(rows) if i not in to_delete]
-        PredictionLogger._save_all(rows)
+        PredictionLogger._save_all(rows, merge_protect=False)
 
     @staticmethod
     def get_stats() -> dict:
