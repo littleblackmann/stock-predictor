@@ -67,14 +67,15 @@ class YFinanceAdapter:
                 df = ticker.history(
                     start=start_date.strftime("%Y-%m-%d"),
                     end=end_date.strftime("%Y-%m-%d"),
-                    auto_adjust=True  # 自動還原除權息
+                    auto_adjust=True,  # 自動還原除權息
+                    repair=True,       # 修復 NaN / 幣值混淆
                 )
             except TypeError:
                 # yfinance timezone 快取未命中（打包環境首次執行常見）
                 # 改用 period 參數繞過時區轉換
                 logger.warning(f"[{symbol}] yfinance timezone cache miss，切換 period 模式重試")
                 period_str = "2y" if period_days >= 700 else ("1y" if period_days >= 365 else "6mo")
-                df = ticker.history(period=period_str, auto_adjust=True)
+                df = ticker.history(period=period_str, auto_adjust=True, repair=True)
 
             if df.empty:
                 raise ValueError(f"找不到 [{symbol}] 的資料，請確認代號是否正確")
@@ -130,10 +131,15 @@ class YFinanceAdapter:
         try:
             ticker = yf.Ticker(symbol)
             try:
-                hist = ticker.history(period="5d", auto_adjust=True)
+                hist = ticker.history(period="5d", auto_adjust=True, repair=True)
             except TypeError:
                 return {}
 
+            if len(hist) < 2:
+                return {}
+
+            # 移除 NaN 列，避免回傳 nan
+            hist = hist.dropna(subset=["Close"])
             if len(hist) < 2:
                 return {}
 

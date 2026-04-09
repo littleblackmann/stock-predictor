@@ -56,6 +56,9 @@ class PredictionLogger:
             "correct":         "",
         }
 
+        logger.info("寫入預測記錄：%s %s → %s (path=%s)",
+                     row["prediction_date"], row["symbol"], row["predicted"], LOG_PATH)
+
         file_exists = os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0
         with open(LOG_PATH, "a", newline="", encoding="utf-8") as f:
             # 注意：不用 utf-8-sig，因為 append 模式會在每次寫入前插入 BOM，
@@ -64,6 +67,12 @@ class PredictionLogger:
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
+            f.flush()
+            os.fsync(f.fileno())
+
+        # 寫入後驗證
+        new_size = os.path.getsize(LOG_PATH)
+        logger.info("預測記錄寫入完成：%s（檔案大小 %d bytes）", row["symbol"], new_size)
 
     # ── 讀取 ──────────────────────────────────────────────────────
 
@@ -98,8 +107,9 @@ class PredictionLogger:
         pending = [
             (i, r) for i, r in enumerate(rows)
             if not r.get("actual")
-            or r.get("actual_return") in ("", "0.00", "nan")
+            or r.get("actual_return") in ("", "0.00", "nan", "資料延遲")
         ]
+        logger.info("backfill: 共 %d 筆記錄，%d 筆待回填", len(rows), len(pending))
         if not pending:
             return 0
 
@@ -109,6 +119,7 @@ class PredictionLogger:
             by_symbol[row["symbol"]].append((i, row))
 
         filled = 0
+        deferred = 0
         today  = date.today()
 
         for symbol, items in by_symbol.items():
@@ -119,7 +130,8 @@ class PredictionLogger:
                 ticker = yf.Ticker(symbol)
                 hist   = ticker.history(
                     start=fetch_start.isoformat(),
-                    end=(today + timedelta(days=1)).isoformat()
+                    end=(today + timedelta(days=1)).isoformat(),
+                    repair=True,
                 )
                 if hist.empty:
                     continue
@@ -144,6 +156,12 @@ class PredictionLogger:
                     target_close = PredictionLogger._near_price(price_map, target_date, "after")
 
                     if pred_close is None or target_close is None:
+                        # repair 也救不回來 → 標記為「資料延遲」，下次啟動會重試
+                        if not rows[i].get("actual"):
+                            rows[i]["actual_return"] = "資料延遲"
+                            deferred += 1
+                        logger.debug("backfill %s %s: 找不到價格 pred=%s target=%s",
+                                     symbol, row["prediction_date"], pred_close, target_close)
                         continue
 
                     ret    = (target_close - pred_close) / pred_close * 100
@@ -158,7 +176,8 @@ class PredictionLogger:
                 logger.warning("backfill %s 失敗: %s", symbol, e)
                 continue
 
-        if filled > 0:
+        logger.info("backfill: 完成，成功回填 %d 筆，資料延遲 %d 筆", filled, deferred)
+        if filled > 0 or deferred > 0:
             PredictionLogger._save_all(rows)
 
         return filled
@@ -213,10 +232,25 @@ class PredictionLogger:
 
     @staticmethod
     def _save_all(rows: list[dict]) -> None:
+        # 寫入前重新讀取 CSV，合併期間可能被 append() 新增的記錄，
+        # 避免 backfill 背景執行緒覆蓋掉新追加的預測。
+        on_disk = PredictionLogger.load_all()
+        known_keys = {
+            (r.get("prediction_date", ""), r.get("symbol", ""))
+            for r in rows
+        }
+        for disk_row in on_disk:
+            key = (disk_row.get("prediction_date", ""), disk_row.get("symbol", ""))
+            if key not in known_keys:
+                rows.append(disk_row)
+                logger.info("_save_all 合併漏失記錄：%s %s", *key)
+
         with open(LOG_PATH, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDS)
             writer.writeheader()
             writer.writerows(rows)
+            f.flush()
+            os.fsync(f.fileno())
 
     # ── 統計 ──────────────────────────────────────────────────────
 

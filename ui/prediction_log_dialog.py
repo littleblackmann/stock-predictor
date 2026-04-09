@@ -203,7 +203,7 @@ class PredictionLogDialog(QDialog):
                 f"{float(row['up_prob']):.1%}" if row.get("up_prob") else "",
                 row.get("gpt_3day", ""),
                 row.get("actual", ""),
-                f"{float(row['actual_return']):.2f}%" if row.get("actual_return") else "—",
+                self._format_return(row.get("actual_return", "")),
                 {"True": "✓", "False": "✗", "": "—"}.get(row.get("correct", ""), "—"),
             ]
 
@@ -225,12 +225,16 @@ class PredictionLogDialog(QDialog):
                         item.setForeground(GREEN)
                     else:
                         item.setForeground(GRAY)
-                elif field == "actual_return" and row.get("actual_return"):
-                    try:
-                        v = float(row["actual_return"])
-                        item.setForeground(RED if v > 0 else GREEN)
-                    except ValueError:
-                        pass
+                elif field == "actual_return":
+                    raw = row.get("actual_return", "")
+                    if raw == "資料延遲":
+                        item.setForeground(QColor("#CC8800"))  # 橘色提示
+                    elif raw:
+                        try:
+                            v = float(raw)
+                            item.setForeground(RED if v > 0 else GREEN)
+                        except ValueError:
+                            pass
                 elif field == "correct":
                     # ✓/✗ 是對錯，不是漲跌，保持綠=正確、紅=錯誤
                     if val == "✓":
@@ -260,6 +264,17 @@ class PredictionLogDialog(QDialog):
         self.lbl_stats.setText("    ".join(parts))
 
     # ── 事件處理 ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _format_return(raw: str) -> str:
+        if not raw:
+            return "—"
+        if raw == "資料延遲":
+            return "⏳ 資料延遲"
+        try:
+            return f"{float(raw):.2f}%"
+        except ValueError:
+            return raw
 
     def _on_selection_changed(self):
         self.btn_delete.setEnabled(bool(self.table.selectedItems()))
@@ -300,11 +315,21 @@ class PredictionLogDialog(QDialog):
 
     def _on_backfill_done(self, count: int):
         self.btn_backfill.setEnabled(True)
+        # 重新載入以顯示「資料延遲」標記
+        self._load_table()
         if count > 0:
             self.lbl_status.setText(f"✅ 已更新 {count} 筆實際結果")
-            self._load_table()
         else:
-            self.lbl_status.setText("✅ 已是最新，所有可回填記錄均已更新")
+            # 檢查是否有資料延遲的記錄
+            from data.prediction_logger import PredictionLogger
+            rows = PredictionLogger.load_all()
+            deferred = sum(1 for r in rows if r.get("actual_return") == "資料延遲")
+            if deferred > 0:
+                self.lbl_status.setText(
+                    f"✅ 已是最新，{deferred} 筆因 API 資料延遲暫無法更新（下次啟動會自動重試）"
+                )
+            else:
+                self.lbl_status.setText("✅ 已是最新，所有可回填記錄均已更新")
 
     def _on_trend(self):
         from ui.accuracy_trend_dialog import AccuracyTrendDialog

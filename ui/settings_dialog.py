@@ -351,6 +351,24 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.5.2",
+                "date": "2026-04-10",
+                "changes": [
+                    "修復即時行情顯示 nan（get_latest_price 啟用 repair + NaN 過濾）",
+                    "修復 K 線圖缺少當日 K 棒（fetch_history 啟用 repair 模式）",
+                ],
+            },
+            {
+                "version": "v1.5.1",
+                "date": "2026-04-10",
+                "changes": [
+                    "修復預測記錄寫入遺失問題（強制落盤 + 防止背景執行緒覆蓋）",
+                    "修復 yfinance 回傳 NaN 導致無法回填實際結果（啟用 repair 模式）",
+                    "無法取得收盤價時顯示「⏳ 資料延遲」，下次啟動自動重試",
+                    "新增完整寫入/回填日誌，方便追蹤問題",
+                ],
+            },
+            {
                 "version": "v1.5.0",
                 "date": "2026-04-03",
                 "changes": [
