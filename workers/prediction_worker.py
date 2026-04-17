@@ -248,15 +248,16 @@ class PredictionWorker(QRunnable):
                         f"波動率={latest_vol_regime:.0%}）")
 
             # ── GPT 情緒加權融合 ──────────────────────────────────
-            # 基礎權重 15%，Brave 深度分析時根據影響程度 / 時間範圍動態調整
-            base_weight = 0.15
+            # 基礎權重 8%，Brave 深度分析時根據影響程度 / 時間範圍動態調整
+            # 先前 15% 造成情緒會 flip 模型決策，實測準確率不佳故調降
+            base_weight = 0.08
             if sentiment.get("source") == "brave" and sentiment.get("impact"):
                 impact_mult    = {"low": 0.7, "medium": 1.0, "high": 1.3}
                 timeframe_mult = {"short": 1.2, "medium": 1.0, "long": 0.6}
-                base_weight = (0.15
+                base_weight = (0.08
                                * impact_mult.get(sentiment["impact"], 1.0)
                                * timeframe_mult.get(sentiment["timeframe"], 1.0))
-                base_weight = min(base_weight, 0.15)  # 上限 15%（避免情緒過度主導）
+                base_weight = min(base_weight, 0.08)  # 上限 8%
             SENTIMENT_WEIGHT = base_weight
             raw_up_prob = prediction["up_prob"]
 
@@ -391,8 +392,9 @@ class PredictionWorker(QRunnable):
         for sym, name in us_symbols.items():
             try:
                 ticker = yf.Ticker(sym)
-                df = ticker.history(period=f"{period_days}d")
+                df = ticker.history(period=f"{period_days}d", auto_adjust=True, repair=True)
                 if df is not None and not df.empty:
+                    df = df.dropna(subset=["Close"])
                     us_data[sym] = df
                     logger.info(f"[美股] {name} 下載成功，{len(df)} 筆")
                 else:

@@ -64,6 +64,7 @@ class LGBMClassifier:
         "bagging_freq":    5,
         "lambda_l1":       0.1,
         "lambda_l2":       0.1,
+        "is_unbalance":    True,  # 自動平衡類別權重，避免多頭歷史資料造成上漲偏見
         "random_state":    42,
         "n_jobs":          -1,
         "verbose":         -1,

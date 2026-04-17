@@ -351,6 +351,16 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.5.4",
+                "date": "2026-04-18",
+                "changes": [
+                    "降低 GPT 新聞情緒權重（15% → 8%），避免情緒主導模型決策",
+                    "LightGBM 訓練啟用類別平衡（is_unbalance），減輕上漲偏見",
+                    "預測記錄新增「原始模型機率」欄位，可比較純模型 vs 加情緒效果",
+                    "修復美股隔夜資料偶發 NaN（啟用 repair 模式）",
+                ],
+            },
+            {
                 "version": "v1.5.3",
                 "date": "2026-04-10",
                 "changes": [

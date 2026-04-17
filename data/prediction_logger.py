@@ -22,8 +22,9 @@ FIELDS = [
     "prediction_date",   # 執行預測當天 YYYY-MM-DD
     "symbol",            # 股票代碼
     "predicted",         # up / down
-    "up_prob",           # 上漲機率 float
+    "up_prob",           # 上漲機率 float（含 GPT 情緒調整）
     "down_prob",         # 下跌機率 float
+    "raw_up_prob",       # 原始模型機率（未加 GPT 情緒），用於 A/B 分析
     "gpt_3day",          # GPT 3日走勢摘要（截斷）
     "actual",            # up / down（回填）
     "actual_return",     # 實際漲跌% float（回填）
@@ -50,6 +51,7 @@ class PredictionLogger:
             "predicted":       "up" if pred.get("prediction") == 1 else "down",
             "up_prob":         f"{pred.get('up_prob', 0):.4f}",
             "down_prob":       f"{pred.get('down_prob', 0):.4f}",
+            "raw_up_prob":     f"{pred.get('raw_up_prob', pred.get('up_prob', 0)):.4f}",
             "gpt_3day":        gpt_short,
             "actual":          "",
             "actual_return":   "",
