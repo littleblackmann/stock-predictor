@@ -39,6 +39,9 @@ class PredictionLogger:
     @staticmethod
     def append(result: dict) -> None:
         """預測完成後寫入一筆空 actual 的記錄"""
+        # 先 migrate 舊 header（避免新 10 欄資料寫進舊 9 欄 CSV 造成欄位錯位）
+        PredictionLogger.migrate_header_if_needed()
+
         pred     = result.get("prediction", {})
         forecast = result.get("forecast_3d", "") or ""
 
@@ -80,6 +83,9 @@ class PredictionLogger:
 
     @staticmethod
     def load_all() -> list[dict]:
+        # 先 migrate 舊 header，讓後續 DictReader 能正確解析
+        PredictionLogger.migrate_header_if_needed()
+
         if not os.path.exists(LOG_PATH):
             return []
         with open(LOG_PATH, "r", encoding="utf-8-sig") as f:
@@ -90,6 +96,86 @@ class PredictionLogger:
             if pd.startswith("\ufeff"):
                 r["prediction_date"] = pd.lstrip("\ufeff")
         return rows
+
+    # ── Schema 升級 ────────────────────────────────────────────────
+
+    @staticmethod
+    def migrate_header_if_needed() -> int:
+        """
+        v1.5.4 新增 raw_up_prob 欄位時，舊 CSV header 只有 9 欄。
+        append 模式不會重寫 header，導致新記錄按 10 欄寫入但 DictReader 依舊 header 解析，
+        結果 raw_up_prob→gpt_3day、gpt_3day→actual 全部錯位一格。
+
+        此函式偵測並修復：
+          - 舊 9 欄記錄：補空 raw_up_prob
+          - 錯位 10 欄記錄：依新 FIELDS 順序重新對齊
+
+        回傳修復筆數（已是新 header 時為 0）。
+        """
+        if not os.path.exists(LOG_PATH) or os.path.getsize(LOG_PATH) == 0:
+            return 0
+
+        # 快速檢查第一行 header，避免每次都讀整個檔
+        with open(LOG_PATH, "r", encoding="utf-8-sig", newline="") as f:
+            first_line = f.readline()
+        if "raw_up_prob" in first_line:
+            return 0
+
+        # 舊 header → 讀入全部 raw rows 重建
+        with open(LOG_PATH, "r", encoding="utf-8-sig", newline="") as f:
+            raw_rows = list(csv.reader(f))
+        if not raw_rows:
+            return 0
+
+        fixed_rows: list[dict] = []
+        migrated_old = 0
+        migrated_misaligned = 0
+        skipped = 0
+
+        for data_row in raw_rows[1:]:
+            if not data_row:
+                continue
+
+            if len(data_row) == 9:
+                # 舊版 9 欄：prediction_date, symbol, predicted, up_prob, down_prob,
+                #            gpt_3day, actual, actual_return, correct
+                new_row = {
+                    "prediction_date": data_row[0],
+                    "symbol":          data_row[1],
+                    "predicted":       data_row[2],
+                    "up_prob":         data_row[3],
+                    "down_prob":       data_row[4],
+                    "raw_up_prob":     "",   # 舊記錄沒有這個值
+                    "gpt_3day":        data_row[5],
+                    "actual":          data_row[6],
+                    "actual_return":   data_row[7],
+                    "correct":         data_row[8],
+                }
+                migrated_old += 1
+            elif len(data_row) == 10:
+                # 新版 10 欄錯位記錄：按 FIELDS 順序對齊
+                new_row = dict(zip(FIELDS, data_row))
+                migrated_misaligned += 1
+            else:
+                logger.warning("migrate 跳過欄位數異常記錄（%d 欄）：%s", len(data_row), data_row)
+                skipped += 1
+                continue
+
+            fixed_rows.append(new_row)
+
+        # 重寫 CSV（10 欄新 header）
+        with open(LOG_PATH, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=FIELDS)
+            writer.writeheader()
+            writer.writerows(fixed_rows)
+            f.flush()
+            os.fsync(f.fileno())
+
+        logger.info(
+            "CSV header migrate 完成：舊 9 欄記錄 %d 筆、錯位 10 欄記錄 %d 筆、跳過 %d 筆 → 新 10 欄 schema",
+            migrated_old, migrated_misaligned, skipped
+        )
+        return migrated_old + migrated_misaligned
 
     # ── 回填 actual ───────────────────────────────────────────────
 

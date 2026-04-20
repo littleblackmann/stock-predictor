@@ -55,6 +55,7 @@ class PredictionLogDialog(QDialog):
         ("股票",      "symbol",          90),
         ("預測",      "predicted",       60),
         ("上漲機率",  "up_prob",         80),
+        ("原始機率",  "raw_up_prob",     75),   # 未加 GPT 情緒的模型原始機率（A/B 比對用）
         ("3日走勢",   "gpt_3day",        200),
         ("實際",      "actual",          60),
         ("漲跌%",     "actual_return",   70),
@@ -164,7 +165,9 @@ class PredictionLogDialog(QDialog):
         hdr = self.table.horizontalHeader()
         for col_idx, (_, _, width) in enumerate(self.COLUMNS):
             self.table.setColumnWidth(col_idx, width)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)   # 3日走勢欄自動延伸
+        # 找出 gpt_3day 欄位的 index，讓它自動延伸（新增欄位後位置可能變動）
+        stretch_idx = next(i for i, c in enumerate(self.COLUMNS) if c[1] == "gpt_3day")
+        hdr.setSectionResizeMode(stretch_idx, QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         root.addWidget(self.table, stretch=1)
 
@@ -201,6 +204,7 @@ class PredictionLogDialog(QDialog):
                 row.get("symbol", ""),
                 row.get("predicted", ""),
                 f"{float(row['up_prob']):.1%}" if row.get("up_prob") else "",
+                f"{float(row['raw_up_prob']):.1%}" if row.get("raw_up_prob") else "—",
                 row.get("gpt_3day", ""),
                 row.get("actual", ""),
                 self._format_return(row.get("actual_return", "")),

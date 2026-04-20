@@ -351,6 +351,15 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.5.5",
+                "date": "2026-04-20",
+                "changes": [
+                    "修復 v1.5.4 預測記錄欄位錯位問題（3日走勢顯示機率值、實際欄位顯示走勢文字）",
+                    "預測記錄視窗新增「原始機率」欄位（v1.5.4 漏加 UI）",
+                    "啟動時自動修復舊版 CSV schema，錯位記錄自動對齊",
+                ],
+            },
+            {
                 "version": "v1.5.4",
                 "date": "2026-04-18",
                 "changes": [
