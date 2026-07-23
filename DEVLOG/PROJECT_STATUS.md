@@ -3,15 +3,15 @@
 > 最後更新：2026-07-23（Day 16，AI 供應商改 OpenRouter）
 
 ## 目前版本
-v1.6.0（**已上傳 GitHub Release**）— AI 供應商改為 OpenRouter + 10 大模型可選
+v1.6.1（**已上傳 GitHub Release**）— 預測提速：Transformer 45 天重訓週期
+- 例行重訓從 ~8 分鐘 → ~1 分鐘內（Transformer 與 LightGBM 7 天門檻脫鉤）
+- 手動重訓 / 準確率驅動重訓不受影響，仍完整重練
+
+### v1.6.0（已上傳 GitHub Release）— AI 供應商改為 OpenRouter + 10 大模型可選
 - 一把 OpenRouter Key 即可切換 GPT / Claude / Gemini / Grok / DeepSeek 等各家模型
 - 設定視窗模型選單依廠商分組，顯示參考費用
 - 舊設定自動遷移（sk-or- 開頭的 key 沿用，OpenAI 的 sk-proj- 丟棄）
 - 2026-07-23 使用者實測成功（gpt-5.6-luna，情緒分析 + 3 日走勢皆正常）
-
-### 未發版的改動（在 master，等下個 Release）
-- **預測提速**：Transformer 改 45 天重訓週期，與 LightGBM 的 7 天門檻脫鉤。
-  例行重訓從 ~8 分鐘 → ~1 分鐘內。手動重訓 / 準確率驅動重訓不受影響。
 
 ### v1.5.5（已上傳 GitHub Release）
 - v1.5.4 新增 raw_up_prob 欄位時，舊 CSV header 沒升級造成欄位錯位
@@ -256,4 +256,4 @@ v1.6.0（**已上傳 GitHub Release**）— AI 供應商改為 OpenRouter + 10 �
 - [Day 13 (2026-04-10)](./2026-04-10.md) — yfinance NaN 全面修復（即時行情+K線+回填）、v1.5.2 上傳
 - [Day 14 (2026-04-18)](./2026-04-18.md) — 準確率調校（情緒降權 + 類別平衡 + 美股 NaN）、v1.5.4 上傳
 - [Day 15 (2026-04-20)](./2026-04-20.md) — v1.5.4 CSV schema 錯位緊急修復（v1.5.5 上傳）
-- [Day 16 (2026-07-23)](./2026-07-23.md) — **AI 供應商改 OpenRouter** + 10 大模型選單 + 舊設定遷移（v1.6.0 已發 Release）+ **預測提速：Transformer 45 天重訓週期**（未發版）
+- [Day 16 (2026-07-23)](./2026-07-23.md) — **AI 供應商改 OpenRouter** + 10 大模型選單 + 舊設定遷移（v1.6.0）+ **預測提速：Transformer 45 天重訓週期**（v1.6.1），兩版皆已發 Release

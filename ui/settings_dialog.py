@@ -377,6 +377,16 @@ class SettingsDialog(QDialog):
 
         changelogs = [
             {
+                "version": "v1.6.1",
+                "date": "2026-07-23",
+                "changes": [
+                    "預測大幅提速：例行重訓從約 8 分鐘縮短到 1 分鐘內",
+                    "Transformer 時序模型改為 45 天重訓週期（長期型態不需每週重練）",
+                    "每週例行重訓只更新 LightGBM（秒級增量訓練）",
+                    "手動重訓與準確率驅動的自動重訓不受影響，仍完整重練",
+                ],
+            },
+            {
                 "version": "v1.6.0",
                 "date": "2026-07-23",
                 "changes": [
