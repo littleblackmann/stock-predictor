@@ -8,7 +8,7 @@
   - 資料：yfinance（歷史 2,500 天 OHLCV）+ TWSE API（籌碼面）+ Brave Search（新聞）
   - 特徵：36 維（技術面 + 籌碼面 + 美股隔夜 + 市場行情）
   - 模型：Transformer（3 層 Encoder，300 天窗口）時序萃取 + LightGBM Ensemble 分類
-  - AI：OpenAI GPT 新聞情緒分析 + 3 日走勢推估
+  - AI：OpenRouter（多模型可選）新聞情緒分析 + 3 日走勢推估
   - 解析：SHAP 可解釋性分析
   - 並發：QThreadPool 背景執行緒
   - 日誌：QueueHandler 非同步寫入

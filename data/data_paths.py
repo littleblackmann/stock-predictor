@@ -94,8 +94,8 @@ def migrate_from_old_location():
     # 如果 AppData 裡完全沒有 config.json，建一個預設的
     if not os.path.exists(CONFIG_PATH):
         default_config = {
-            "openai_api_key": "",
-            "openai_model": "gpt-4.1-mini",
+            "openrouter_api_key": "",
+            "openrouter_model": "openai/gpt-5.4-mini",
             "auto_retrain_days": 7,
             "default_symbol": "0050.TW",
             "brave_api_key": "",

@@ -43,7 +43,8 @@
 【核心技術】
   - Transformer（3 層 Encoder，300 天窗口）— 業界主流時序模型
   - LightGBM Ensemble（3 模型投票）— 梯度提升樹分類
-  - OpenAI GPT — 新聞情緒分析 + 3 日走勢推估
+  - OpenRouter（GPT / Claude / Gemini / Grok 等 10 大模型可自選）
+    — 新聞情緒分析 + 3 日走勢推估
   - Brave Search API — 即時新聞搜尋
 
 【注意事項】

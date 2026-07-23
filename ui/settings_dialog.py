@@ -1,6 +1,6 @@
 """
 設定視窗（分頁版）
-- Tab 1：API 設定（OpenAI / Brave Search / 模型選擇）
+- Tab 1：API 設定（OpenRouter / Brave Search / 模型選擇）
 - Tab 2：使用說明（模型成長、功能介紹、注意事項）
 - 首次啟動時自動彈出（API Key 為空）
 - 可透過控制列 ⚙ 按鈕隨時開啟
@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from data.config_manager import load_config, save_config, AVAILABLE_MODELS
+from data.config_manager import (
+    load_config, save_config, AVAILABLE_MODELS, DEFAULT_MODEL,
+)
 
 
 class SettingsDialog(QDialog):
@@ -144,12 +146,18 @@ class SettingsDialog(QDialog):
         )
         layout.addWidget(warning)
 
-        # OpenAI API Key
-        layout.addWidget(self._make_label("OpenAI API Key"))
+        # OpenRouter API Key
+        layout.addWidget(self._make_label("OpenRouter API Key"))
+
+        key_hint = QLabel(
+            "至 https://openrouter.ai/keys 申請，一把 Key 即可使用下方所有模型"
+        )
+        key_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
+        layout.addWidget(key_hint)
 
         key_row = QHBoxLayout()
         self.input_key = QLineEdit()
-        self.input_key.setPlaceholderText("sk-proj-...")
+        self.input_key.setPlaceholderText("sk-or-v1-...")
         self.input_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.input_key.setFixedHeight(36)
         key_row.addWidget(self.input_key)
@@ -208,28 +216,46 @@ class SettingsDialog(QDialog):
             "color: #E0E6F0; selection-background-color: #3A5A3A; }"
         )
 
-        # GPT-5.4 系列
-        self.combo_model.addItem("── GPT-5.4 系列（最新旗艦）──")
-        self.combo_model.model().item(0).setEnabled(False)
-        for m in ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]:
-            self.combo_model.addItem(f"  {m}", m)
-
-        self.combo_model.insertSeparator(self.combo_model.count())
-
-        sep_idx = self.combo_model.count()
-        self.combo_model.addItem("── GPT-4o 系列 ──")
-        self.combo_model.model().item(sep_idx).setEnabled(False)
-        for m in ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]:
-            self.combo_model.addItem(f"  {m}", m)
+        # 依廠商分組列出前 10 大模型（清單見 data/config_manager.AVAILABLE_MODELS）
+        self._model_desc = {m[0]: m[3] for m in AVAILABLE_MODELS}
+        current_group = None
+        for model_id, display, group, desc in AVAILABLE_MODELS:
+            if group != current_group:
+                if current_group is not None:
+                    self.combo_model.insertSeparator(self.combo_model.count())
+                header_idx = self.combo_model.count()
+                self.combo_model.addItem(f"── {group} ──")
+                self.combo_model.model().item(header_idx).setEnabled(False)
+                current_group = group
+            item_idx = self.combo_model.count()
+            self.combo_model.addItem(f"  {display}", model_id)
+            self.combo_model.setItemData(
+                item_idx, f"{model_id}\n{desc}", Qt.ItemDataRole.ToolTipRole
+            )
 
         layout.addWidget(self.combo_model)
 
-        hint = QLabel("建議：日常使用選 gpt-5.4-mini（速度快、費用低）")
-        hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
-        layout.addWidget(hint)
+        # 選到哪個模型就顯示該模型的說明與參考費用
+        self.label_model_hint = QLabel("")
+        self.label_model_hint.setWordWrap(True)
+        self.label_model_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
+        layout.addWidget(self.label_model_hint)
+
+        # 標籤建好後才接訊號，避免初始化期間觸發時抓不到 label
+        self.combo_model.currentIndexChanged.connect(self._on_model_changed)
+        self._on_model_changed()
 
         layout.addStretch()
         return tab
+
+    def _on_model_changed(self, *_):
+        """更新模型說明文字"""
+        model_id = self.combo_model.currentData()
+        desc = self._model_desc.get(model_id, "")
+        if model_id:
+            self.label_model_hint.setText(f"{model_id}　—　{desc}")
+        else:
+            self.label_model_hint.setText("請選擇一個模型")
 
     # ── Tab 2: 使用說明 ───────────────────────────────────────────
 
@@ -255,7 +281,7 @@ class SettingsDialog(QDialog):
             "本系統結合 Transformer 深度學習與 LightGBM 機器學習模型，\n"
             "透過技術面指標、籌碼面數據、美股隔夜訊號等 84 維特徵，\n"
             "對台股個股進行明日漲跌預測。\n\n"
-            "若設定 OpenAI API Key，可額外啟用：\n"
+            "若設定 OpenRouter API Key，可額外啟用：\n"
             "• AI 新聞情緒分析（搭配 Brave Search 效果更佳）\n"
             "• 未來 3 日走勢預測"
         ))
@@ -350,6 +376,16 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {
+                "version": "v1.6.0",
+                "date": "2026-07-23",
+                "changes": [
+                    "AI 供應商改為 OpenRouter，一把 Key 即可使用 GPT / Claude / Gemini / Grok 等各家模型",
+                    "設定視窗新增 10 大熱門模型選單（依廠商分組，顯示參考費用）",
+                    "⚠ 需重新申請 OpenRouter API Key（https://openrouter.ai/keys），舊的 OpenAI Key 無法使用",
+                    "修復無新聞時的情緒分析：token 上限過低導致推理型模型回傳空值",
+                ],
+            },
             {
                 "version": "v1.5.5",
                 "date": "2026-04-20",
@@ -543,23 +579,24 @@ class SettingsDialog(QDialog):
 
     def _load_current(self):
         config = load_config()
-        self.input_key.setText(config.get("openai_api_key", ""))
+        self.input_key.setText(config.get("openrouter_api_key", ""))
         self.input_brave_key.setText(config.get("brave_api_key", ""))
-        current_model = config.get("openai_model", "")
+        current_model = config.get("openrouter_model", "") or DEFAULT_MODEL
         for i in range(self.combo_model.count()):
             if self.combo_model.itemData(i) == current_model:
                 self.combo_model.setCurrentIndex(i)
                 break
+        self._on_model_changed()
 
     def _on_save(self):
         key = self.input_key.text().strip()
         brave_key = self.input_brave_key.text().strip()
         model = self.combo_model.currentData()
-        if model is None:
-            model = ""
+        if not model:
+            model = DEFAULT_MODEL
         save_config({
-            "openai_api_key": key,
-            "openai_model": model,
+            "openrouter_api_key": key,
+            "openrouter_model": model,
             "brave_api_key": brave_key,
         })
         self.accept()

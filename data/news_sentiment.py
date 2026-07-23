@@ -1,7 +1,10 @@
 """
-OpenAI 新聞情緒分析模組
+OpenRouter 新聞情緒分析模組
 支援 Brave Search API 深度搜尋（優先）+ Google News RSS（fallback）
-透過 GPT 分析情緒分數、影響程度、產業連動
+透過 LLM 分析情緒分數、影響程度、產業連動
+
+OpenRouter 提供 OpenAI 相容端點，因此仍使用 openai 套件，
+只是把 base_url 指向 OpenRouter，即可自由切換 GPT / Claude / Gemini 等模型。
 """
 import json
 import os
@@ -14,7 +17,13 @@ from logger.app_logger import get_logger
 
 logger = get_logger(__name__)
 
-from data.config_manager import load_config
+from data.config_manager import (
+    load_config,
+    OPENROUTER_BASE_URL,
+    OPENROUTER_APP_URL,
+    OPENROUTER_APP_NAME,
+    DEFAULT_MODEL,
+)
 
 
 class NewsSentimentAnalyzer:
@@ -60,21 +69,28 @@ class NewsSentimentAnalyzer:
 
     def __init__(self):
         config = load_config()
-        api_key = config.get("openai_api_key", "")
-        self.model = config.get("openai_model", "gpt-4o-mini")
+        api_key = (config.get("openrouter_api_key", "") or "").strip()
+        self.model = config.get("openrouter_model", "") or DEFAULT_MODEL
         self.available = False
         self.brave_client = None
 
         if not api_key or api_key == "在這裡貼上你的新API Key":
-            logger.warning("OpenAI API Key 未設定，新聞情緒分析停用")
+            logger.warning("OpenRouter API Key 未設定，新聞情緒分析停用")
             return
 
         try:
-            self.client = OpenAI(api_key=api_key)
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=OPENROUTER_BASE_URL,
+                default_headers={
+                    "HTTP-Referer": OPENROUTER_APP_URL,
+                    "X-Title": OPENROUTER_APP_NAME,
+                },
+            )
             self.available = True
             logger.info(f"NewsSentimentAnalyzer 初始化完成，使用模型：{self.model}")
         except Exception as e:
-            logger.error(f"OpenAI 初始化失敗：{e}")
+            logger.error(f"OpenRouter 初始化失敗：{e}")
 
         # Brave Search（選用）
         brave_key = config.get("brave_api_key", "")
@@ -107,7 +123,7 @@ class NewsSentimentAnalyzer:
             }
         """
         if not self.available:
-            return {"score": 0.0, "reason": "OpenAI 未啟用", "news_count": 0, "available": False}
+            return {"score": 0.0, "reason": "OpenRouter 未啟用", "news_count": 0, "available": False}
 
         # ── 優先：Brave Search 深度搜尋 ──
         brave_results = []
@@ -147,7 +163,7 @@ class NewsSentimentAnalyzer:
                 messages=[
                     {"role": "user", "content": user_message},
                 ],
-                max_completion_tokens=2048,
+                max_tokens=2048,
             )
 
             raw = response.choices[0].message.content or ""
@@ -205,7 +221,7 @@ class NewsSentimentAnalyzer:
                     {"role": "system", "content": self.BRAVE_ANALYSIS_PROMPT},
                     {"role": "user", "content": user_message},
                 ],
-                max_completion_tokens=2048,
+                max_tokens=2048,
             )
 
             raw = response.choices[0].message.content or ""
@@ -303,7 +319,7 @@ confidence 只能填：高、中、低 其中一個。"""
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=8192,
+                max_tokens=8192,
             )
             raw  = response.choices[0].message.content or ""
             data = self._parse_json_safe(raw)
@@ -337,9 +353,9 @@ confidence 只能填：高、中、低 其中一個。"""
 
     def _default_forecast(self) -> list:
         return [
-            {"day": "明日", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "GPT 未啟用"},
-            {"day": "後天", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "GPT 未啟用"},
-            {"day": "+3天", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "GPT 未啟用"},
+            {"day": "明日", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "AI 未啟用"},
+            {"day": "後天", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "AI 未啟用"},
+            {"day": "+3天", "trend": "盤整", "color": "yellow", "confidence": "低", "reason": "AI 未啟用"},
         ]
 
     def _parse_json_safe(self, text: str) -> dict:
@@ -417,7 +433,9 @@ confidence 只能填：高、中、低 其中一個。"""
                         f"score 範圍 -0.3 到 +0.3。"
                     )},
                 ],
-                max_completion_tokens=150,
+                # 部分推理型模型（GPT-5.x / Claude Opus）會先耗用 token 思考，
+                # 上限太低會導致 content 為空，故放寬到 512。
+                max_tokens=512,
             )
             raw    = response.choices[0].message.content or ""
             result = self._parse_json_safe(raw)

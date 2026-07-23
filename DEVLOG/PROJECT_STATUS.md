@@ -1,9 +1,19 @@
 # 台股預測分析系統 — 專案現況
 
-> 最後更新：2026-04-20（Day 15，CSV schema 緊急修復）
+> 最後更新：2026-07-23（Day 16，AI 供應商改 OpenRouter）
 
 ## 目前版本
-v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯位 + UI 補「原始機率」欄
+v1.6.0（**程式碼已 push，尚未發 Release**）— AI 供應商改為 OpenRouter + 10 大模型可選
+
+> ⚠ **發 Release 前必做**：先申請 OpenRouter key 實測，並確保父母的電腦有設定新 key。
+> 舊的 OpenAI key 會被遷移邏輯丟棄，直接發版會讓他們的新聞情緒功能靜默停擺。
+> 目前沒有 v1.6.0 tag，updater 比對不到 Release 就不會觸發更新，是安全的。
+
+- 一把 OpenRouter Key 即可切換 GPT / Claude / Gemini / Grok / DeepSeek 等各家模型
+- 設定視窗模型選單依廠商分組，顯示參考費用
+- 舊設定自動遷移（sk-or- 開頭的 key 沿用，OpenAI 的 sk-proj- 丟棄）
+
+### v1.5.5（已上傳 GitHub Release）
 - v1.5.4 新增 raw_up_prob 欄位時，舊 CSV header 沒升級造成欄位錯位
 - v1.5.5 加自動 migration，啟動時偵測並修復錯位記錄
 - 使用者資料已搬遷至 `%LOCALAPPDATA%/台股預測分析系統/`
@@ -17,10 +27,10 @@ v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯�
 - [x] K線圖 + MA5/MA20 + 成交量副圖（TradingView）
 - [x] Transformer + LightGBM 融合預測（明日漲跌機率）
 - [x] SHAP 可解釋性分析（前5大驅動因子）
-- [x] GPT 新聞情緒分析 + 融合進預測機率
+- [x] AI 新聞情緒分析 + 融合進預測機率（Day 16 起走 OpenRouter，模型可自選）
 - [x] Brave Search 深度新聞整合（Day 6，取代 Google RSS 為主要來源）
 - [x] 情緒權重壓縮調整（Day 6，tanh 緩衝 + 上限 25%→15%）
-- [x] GPT 未來 3 日走勢推估
+- [x] AI 未來 3 日走勢推估
 - [x] 模型自動重訓（超過 7 天）
 - [x] CSV 報表匯出
 - [x] 每個股票有獨立的模型檔案（Day 2 修正）
@@ -103,6 +113,11 @@ v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯�
   - [x] 刪除記錄、匯出 CSV
 
 ## 待討論 / 待決定
+
+- **準確率提升行動清單**：2026-04-20 晚間討論結論，原訂 4/21 開工，**至 2026-07-23 仍未動工**。詳見 [Day 15 日誌](./2026-04-20.md#晚間討論目前準確率評估--能否從歷史記錄直接學規律) 最後一段
+  - 第 1 優先：信心度分層命中率統計（~30 分鐘可做，能回答 up_prob 是否值得信）
+  - 第 2 優先：CSV 補記 SHAP top 5（為 meta-learning 鋪路，要寫 migration）
+  - 第 3 優先：`raw_up_prob` vs `up_prob` A/B 分析（情緒加成是否有用）
 
 ## Day 13 已完成（2026-04-10）
 - [x] 修復即時行情顯示 nan（get_latest_price 啟用 repair + NaN 過濾）
@@ -207,7 +222,8 @@ v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯�
 
 ## 已知問題 / 技術債
 - config.json 中的 API Key 是明文（使用者自用，暫不處理）
-- OpenAI 模型名稱需確認（使用者確認有效，暫不處理）
+- ~~OpenAI 模型名稱需確認~~ → Day 16 解決：模型清單已對過 OpenRouter `/api/v1/models` 實際回傳
+- v1.6.0 的真實 API 呼叫尚未實測（需 OpenRouter key），只驗到 client 建構與 UI
 
 ## 技術架構快速參考
 | 層級 | 技術 |
@@ -218,7 +234,7 @@ v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯�
 | 特徵 | 32~45維（技術指標13+量能異常4+籌碼面13+市場行情4+美股隔夜4+多時間框架2+OHLCV 5） |
 | 時序模型 | Transformer(3層 Encoder, 300天窗口) 時序萃取，取代 LSTM |
 | 分類模型 | LightGBM Ensemble(×3) + 行情專用模型(×3) 融合分類 |
-| AI分析 | OpenAI GPT（新聞情緒 + 3日走勢） |
+| AI分析 | OpenRouter（OpenAI 相容端點，10 大模型可自選；新聞情緒 + 3日走勢） |
 | 並發 | QThreadPool 背景執行緒 |
 | 日誌 | QueueHandler 非同步寫入 |
 | 資料存放 | %LOCALAPPDATA%/台股預測分析系統/（AppData 分離） |
@@ -240,3 +256,4 @@ v1.5.5（**已上傳 GitHub Release**）— 修復 v1.5.4 預測記錄欄位錯�
 - [Day 13 (2026-04-10)](./2026-04-10.md) — yfinance NaN 全面修復（即時行情+K線+回填）、v1.5.2 上傳
 - [Day 14 (2026-04-18)](./2026-04-18.md) — 準確率調校（情緒降權 + 類別平衡 + 美股 NaN）、v1.5.4 上傳
 - [Day 15 (2026-04-20)](./2026-04-20.md) — v1.5.4 CSV schema 錯位緊急修復（v1.5.5 上傳）
+- [Day 16 (2026-07-23)](./2026-07-23.md) — **AI 供應商改 OpenRouter** + 10 大模型選單 + 舊設定遷移（v1.6.0，未發 Release）
