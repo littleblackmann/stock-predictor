@@ -51,7 +51,8 @@ class PredictionWorker(QRunnable):
         """
         Args:
             symbol: 股票代號（如 0050 或 0050.TW）
-            retrain: True = 強制重新訓練模型（忽略已存檔的模型）
+            retrain: True = 強制重新訓練（Transformer + LightGBM 都從頭練）。
+                     False 時各自依週期判斷：LightGBM 7 天、Transformer 45 天。
         """
         super().__init__()
         self.symbol  = symbol
@@ -75,14 +76,21 @@ class PredictionWorker(QRunnable):
         """背景執行緒的主要執行邏輯"""
 
         # ── 自動判斷是否需要重訓 ──────────────────────────────────
-        if not self.retrain:
+        # 兩個模型的重訓週期是分開的：
+        #   - LightGBM：7 天門檻（增量重訓只要秒級）
+        #   - Transformer：45 天門檻（從頭練要數分鐘，且長期型態不會週週變）
+        # 手動強制重訓（retrain=True 傳入）時兩個都從頭練。
+        force_retrain = self.retrain
+        lgbm_retrain  = force_retrain
+        if not lgbm_retrain:
             should_retrain, reason = LGBMClassifier.needs_retrain(self.symbol)
             if should_retrain:
-                logger.info(f"自動觸發重訓：{reason}")
-                self.retrain = True
+                logger.info(f"自動觸發 LightGBM 重訓：{reason}")
+                lgbm_retrain = True
                 self._emit_progress(2, f"🔄 自動重訓：{reason}")
 
-        logger.info(f"預測任務開始：symbol={self.symbol}, retrain={self.retrain}")
+        logger.info(f"預測任務開始：symbol={self.symbol}, "
+                    f"force={force_retrain}, lgbm_retrain={lgbm_retrain}")
 
         try:
             # ── 步驟 1：下載資料 ──────────────────────────────────
@@ -137,15 +145,19 @@ class PredictionWorker(QRunnable):
             seq_extractor = TransformerExtractor(symbol=self.symbol)
             seq_loaded = False
 
-            if not self.retrain:
-                seq_loaded = seq_extractor.load()
-                # 特徵數防護：舊模型特徵維度不符時強制重訓
-                if seq_loaded:
-                    expected_n = len(seq_input_cols)
-                    scaler_n = getattr(seq_extractor.scaler, "n_features_in_", None)
-                    if scaler_n is not None and scaler_n != expected_n:
-                        logger.info(f"Transformer 特徵數不符（模型={scaler_n}，當前={expected_n}），強制重訓")
-                        seq_loaded = False
+            if not force_retrain:
+                seq_needs, seq_reason = seq_extractor.needs_retrain()
+                if seq_needs:
+                    logger.info(f"Transformer 重訓：{seq_reason}")
+                else:
+                    seq_loaded = seq_extractor.load()
+                    # 特徵數防護：舊模型特徵維度不符時強制重訓
+                    if seq_loaded:
+                        expected_n = len(seq_input_cols)
+                        scaler_n = getattr(seq_extractor.scaler, "n_features_in_", None)
+                        if scaler_n is not None and scaler_n != expected_n:
+                            logger.info(f"Transformer 特徵數不符（模型={scaler_n}，當前={expected_n}），強制重訓")
+                            seq_loaded = False
 
             if not seq_loaded:
                 self._emit_progress(55, "開始訓練 Transformer 時序模型（首次訓練需要幾分鐘）...")
@@ -169,7 +181,7 @@ class PredictionWorker(QRunnable):
             lgbm_clf = LGBMClassifier(symbol=self.symbol)
             lgbm_loaded = False
 
-            if not self.retrain:
+            if not lgbm_retrain:
                 # 傳入當前特徵數，維度不符時自動強制重訓
                 expected_feats = OUTPUT_DIM + len(feature_cols)
                 lgbm_loaded = lgbm_clf.load(expected_n_features=expected_feats)

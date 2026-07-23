@@ -45,6 +45,13 @@ EPOCHS         = 40    # 訓練 Epoch 數
 BATCH_SIZE     = 32    # 批次大小
 OUTPUT_DIM     = 64    # 輸出特徵向量維度（與 LSTM 的 LSTM_UNITS 對應）
 
+# Transformer 重訓週期（天）。
+# Transformer 學的是長期時序型態（季節性、財報週期），不需要跟著
+# LightGBM 每 7 天重練 —— 它佔掉例行重訓 8 成時間（實測 ~8 分鐘），
+# 而 LightGBM 增量重訓只要秒級。準確率驅動的 AutoRetrainWorker
+# 不受此限制，仍會連 Transformer 一起從頭練。
+TRANSFORMER_RETRAIN_DAYS = 45
+
 
 # ── 自訂 Keras 層 ──────────────────────────────────────────────────
 
@@ -373,6 +380,25 @@ class TransformerExtractor:
         X = scaled.reshape(1, SEQUENCE_LEN, -1)
         features = self.feature_extractor.predict(X, verbose=0)
         return features  # shape: (1, OUTPUT_DIM)
+
+    def needs_retrain(self) -> tuple[bool, str]:
+        """
+        檢查 Transformer 是否到期需要重訓（以模型檔案 mtime 判斷）。
+
+        注意：只判斷「年齡」，特徵維度防護仍由呼叫端
+        （prediction_worker 的 scaler.n_features_in_ 檢查）負責。
+        """
+        if not os.path.exists(self._model_path):
+            return True, "尚無已訓練 Transformer"
+        try:
+            import time
+            days = (time.time() - os.path.getmtime(self._model_path)) / 86400
+            if days >= TRANSFORMER_RETRAIN_DAYS:
+                return True, (f"Transformer 已 {int(days)} 天未更新"
+                              f"（門檻 {TRANSFORMER_RETRAIN_DAYS} 天）")
+            return False, f"Transformer 上次訓練於 {int(days)} 天前"
+        except Exception as e:
+            return True, f"Transformer 時間戳讀取失敗：{e}"
 
     def load(self) -> bool:
         """載入已儲存的模型"""
