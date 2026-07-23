@@ -427,6 +427,9 @@ class LGBMClassifier:
             "vol_breakout":          "爆量突破訊號",
             "vol_price_diverge":     "量價背離",
             "vol_trend":             "量能趨勢",
+            # 連漲跌 / 金叉動態
+            "price_streak":          "連漲/連跌天數",
+            "ma5_cross_change":      "金叉距離變化",
         }
         return labels.get(name, name)
 

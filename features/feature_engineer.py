@@ -3,7 +3,7 @@
 計算技術指標，建構供 Transformer + LightGBM 使用的特徵矩陣
 
 特徵維度：
-- 技術面基礎：17 維（含成交量異常偵測 4 維）
+- 技術面基礎：19 維（含成交量異常偵測 4 維 + 連漲跌天數/金叉動態 2 維）
 - 美股隔夜訊號：4 維（S&P500 報酬、費半報酬、VIX 水位、VIX 變化）
 - 多時間框架：2 維（週線趨勢、週 RSI）
 - 市場狀態辨識：4 維（行情狀態 / 趨勢強度 / 持續天數 / 波動率狀態）
@@ -152,6 +152,15 @@ class FeatureEngineer:
         # --- 價格位置特徵 ---
         df["high_low_ratio"] = (df["High"] - df["Low"]) / df["Close"]  # 當日振幅
         df["close_position"] = (df["Close"] - df["Low"]) / (df["High"] - df["Low"])  # 收盤在高低點間的位置
+
+        # --- 連漲/連跌天數 + 金叉距離變化（2026-07-24 新增）---
+        # 回測依據（8 支自選股 × 7 年）：連跌 >=5 天後隔日勝率 56%、
+        # 5 日平均報酬 +1.07%（baseline +0.45%）——散戶市場的超賣反彈效應。
+        # 正值 = 連漲天數，負值 = 連跌天數
+        df["price_streak"] = self._calc_consecutive(df["Close"].diff())
+        # 金叉距離變化率：ma5_cross_ma20 的日變化，正值 = MA5 正在追上 MA20
+        # （靜態距離已有 ma5_cross_ma20，這裡補上「收斂中還是發散中」的動態）
+        df["ma5_cross_change"] = df["ma5_cross_ma20"].diff()
 
         # --- 目標標籤：明天是否上漲 ---
         # 1 = 明天收盤 > 今天收盤（上漲），0 = 下跌或平盤
@@ -448,7 +457,7 @@ class FeatureEngineer:
         包含：基礎技術面 + 美股隔夜 + 多時間框架 + 市場狀態 + 籌碼（選用）
         """
         base = [
-            # 基礎技術面（17 維，含成交量異常偵測）
+            # 基礎技術面（19 維，含成交量異常偵測 + 連漲跌/金叉動態）
             "log_return",
             "ma5_cross_ma20",
             "macd", "macd_signal", "macd_hist",
@@ -459,6 +468,8 @@ class FeatureEngineer:
             "high_low_ratio", "close_position",
             # 成交量異常偵測（4 維）
             "vol_anomaly", "vol_breakout", "vol_price_diverge", "vol_trend",
+            # 連漲/連跌天數 + 金叉距離變化（2 維，2026-07-24 回測驗證後新增）
+            "price_streak", "ma5_cross_change",
         ]
         # 美股隔夜訊號（4 維，永遠包含）
         base += US_OVERNIGHT_FEATURES
@@ -508,7 +519,7 @@ class FeatureEngineer:
         cols = [
             # OHLCV（5 維）
             "Open", "High", "Low", "Close", "Volume",
-            # 基礎技術面（17 維，含成交量異常偵測）
+            # 基礎技術面（19 維，含成交量異常偵測 + 連漲跌/金叉動態）
             "log_return",
             "ma5_cross_ma20",
             "macd", "macd_signal", "macd_hist",
@@ -519,6 +530,8 @@ class FeatureEngineer:
             "high_low_ratio", "close_position",
             # 成交量異常偵測（4 維）
             "vol_anomaly", "vol_breakout", "vol_price_diverge", "vol_trend",
+            # 連漲/連跌天數 + 金叉距離變化（2 維，2026-07-24 回測驗證後新增）
+            "price_streak", "ma5_cross_change",
         ]
         # 美股隔夜訊號（4 維）
         cols += US_OVERNIGHT_FEATURES
