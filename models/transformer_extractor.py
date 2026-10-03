@@ -259,7 +259,11 @@ class TransformerExtractor:
 
         # ── 正規化特徵 ──
         feature_data = df[input_cols].values
-        scaled_data = self.scaler.fit_transform(feature_data)
+        n_sequences = len(feature_data) - SEQUENCE_LEN + 1
+        train_sequences = int(n_sequences * .8)
+        fit_end = SEQUENCE_LEN - 2 + train_sequences
+        self.scaler.fit(feature_data[:fit_end])
+        scaled_data = self.scaler.transform(feature_data)
 
         # ── 建立時間序列窗口 ──
         X, y = self._create_sequences(scaled_data, df[label_col].values)
@@ -270,14 +274,14 @@ class TransformerExtractor:
 
         # ── 計算時間衰減權重 ──
         # 序列起始位置對應的日期索引（每個窗口以最後一天的日期為代表）
-        seq_end_indices = df.index[SEQUENCE_LEN:][:len(y)]
+        seq_end_indices = df.index[SEQUENCE_LEN - 1:][:len(y)]
         sample_weights = _build_time_decay_weights(len(y), seq_end_indices)
 
         # ── 80/20 分割（保持時間順序，不隨機打亂） ──
         split = int(len(X) * 0.8)
-        X_train, X_val = X[:split], X[split:]
-        y_train, y_val = y[:split], y[split:]
-        w_train, w_val = sample_weights[:split], sample_weights[split:]
+        X_train, X_val = X[:split - 1], X[split:]
+        y_train, y_val = y[:split - 1], y[split:]
+        w_train, w_val = sample_weights[:split - 1], sample_weights[split:]
 
         # ── 建立模型 ──
         self._build_model(n_features=X.shape[2])
@@ -439,7 +443,7 @@ class TransformerExtractor:
             y: shape (n_windows,)
         """
         X, y = [], []
-        for i in range(SEQUENCE_LEN, len(data)):
+        for i in range(SEQUENCE_LEN, len(data) + 1):
             X.append(data[i - SEQUENCE_LEN:i])
-            y.append(labels[i])
+            y.append(labels[i - 1])
         return np.array(X), np.array(y)

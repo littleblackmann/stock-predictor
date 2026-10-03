@@ -90,8 +90,84 @@ class YFinanceAdapter:
             return df
 
         except Exception as e:
-            logger.error(f"[{symbol}] 資料下載失敗：{e}", exc_info=True)
-            raise
+            logger.warning(f"[{symbol}] yfinance 連線失敗，改用 Yahoo 行情端點：{type(e).__name__}")
+            return self.fetch_chart(symbol, period_days)
+
+    @staticmethod
+    def fetch_chart(symbol, period_days=2500):
+        """Cookie-independent Yahoo chart fallback with adjusted OHLC prices."""
+        import requests
+        from urllib.parse import quote
+        from data.market_time import taipei_now
+        last_error = None
+        for host in ('query1.finance.yahoo.com', 'query2.finance.yahoo.com'):
+            try:
+                response = requests.get(
+                    f'https://{host}/v8/finance/chart/{quote(symbol, safe="")}',
+                    params={'range':'10y', 'interval':'1d'},
+                    headers={'User-Agent':'Mozilla/5.0'}, timeout=15)
+                response.raise_for_status()
+                payload = response.json()['chart']
+                if payload.get('error') or not payload.get('result'):
+                    raise ValueError('行情來源未提供資料')
+                chart = payload['result'][0]
+                quotes = chart['indicators']['quote'][0]
+                idx = pd.to_datetime(chart['timestamp'], unit='s', utc=True)
+                idx = idx.tz_convert(chart['meta']['exchangeTimezoneName']).tz_localize(None).normalize()
+                frame = pd.DataFrame({key.title():quotes[key] for key in ('open','high','low','close','volume')}, index=idx)
+                adjusted = chart['indicators'].get('adjclose')
+                if adjusted:
+                    factor = pd.Series(adjusted[0]['adjclose'],index=idx)/frame['Close']
+                    for col in ('Open','High','Low','Close'):
+                        frame[col] *= factor
+                frame = frame.replace([np.inf,-np.inf], np.nan).dropna()
+                frame = frame.loc[frame['Close']>0]
+                cutoff = (taipei_now()-timedelta(days=period_days)).date()
+                frame = frame.loc[frame.index.date>=cutoff].sort_index()
+                frame = frame.loc[~frame.index.duplicated(keep='last')]
+                if frame.empty:
+                    raise ValueError('行情資料不足')
+                if symbol.endswith('.TW') and idx[-1] > frame.index[-1]:
+                    frame = YFinanceAdapter.repair_recent_twse(frame, symbol, idx[-1].date())
+                return frame
+            except Exception as e:
+                last_error = e
+        raise ValueError(f'無法取得 {symbol} 行情，請稍後再試') from last_error
+
+    @staticmethod
+    def repair_recent_twse(frame, symbol, target_date):
+        """Fill missing tail sessions from TWSE's monthly official OHLC report.
+
+        Existing adjusted Yahoo history is retained. Only append missing tail
+        dates, with official volume in shares. Never fill a missing day by ffill.
+        """
+        import requests
+        try:
+            response = requests.get('https://www.twse.com.tw/exchangeReport/STOCK_DAY',
+                params={'response':'json','date':target_date.strftime('%Y%m%d'),
+                        'stockNo':symbol.split('.')[0]}, timeout=15)
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get('stat') != 'OK':
+                return frame
+            rows=[]
+            for item in payload.get('data',[]):
+                year,month,day=map(int,item[0].split('/'))
+                stamp=pd.Timestamp(year+1911,month,day)
+                if stamp <= frame.index[-1] or stamp.date() > target_date:
+                    continue
+                nums=[float(str(item[i]).replace(',','')) for i in (3,4,5,6,1)]
+                if not all(np.isfinite(nums)) or nums[3]<=0:
+                    continue
+                rows.append(dict(zip(('Open','High','Low','Close','Volume'),nums),date=stamp))
+            if rows:
+                tail=pd.DataFrame(rows).set_index('date')
+                frame=pd.concat([frame,tail]).sort_index()
+                logger.info('[%s] 已用 TWSE 官方資料補齊 %d 個交易日',symbol,len(tail))
+            return frame
+        except Exception:
+            logger.warning('[%s] 官方尾端行情暫不可用，保留缺漏狀態',symbol)
+            return frame
 
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """

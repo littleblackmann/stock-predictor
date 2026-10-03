@@ -31,23 +31,8 @@ DEFAULT_CONFIG = {
 # ── 前 10 大熱門模型 ──────────────────────────────────────────────
 # (模型 ID, 顯示名稱, 分組, 說明)
 # 價格為 OpenRouter 每百萬 token 的輸入/輸出費用（美元），僅供參考
-AVAILABLE_MODELS = [
-    # OpenAI
-    ("openai/gpt-5.6-terra",       "GPT-5.6 Terra",     "OpenAI",   "旗艦推理，分析最深入（$2.5/$15）"),
-    ("openai/gpt-5.6-luna",        "GPT-5.6 Luna",      "OpenAI",   "高 CP 值旗艦（$1/$6）"),
-    ("openai/gpt-5.4-mini",        "GPT-5.4 Mini",      "OpenAI",   "速度快、費用低，日常首選（$0.75/$4.5）"),
-    # Anthropic
-    ("anthropic/claude-opus-4.8",  "Claude Opus 4.8",   "Anthropic", "推理能力最強，費用較高（$5/$25）"),
-    ("anthropic/claude-sonnet-5",  "Claude Sonnet 5",   "Anthropic", "均衡型，中文表現佳（$2/$10）"),
-    ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5",  "Anthropic", "輕量快速（$1/$5）"),
-    # Google
-    ("google/gemini-3.6-flash",    "Gemini 3.6 Flash",  "Google",   "反應極快、長文本（$1.5/$7.5）"),
-    # xAI
-    ("x-ai/grok-4.5",              "Grok 4.5",          "xAI",      "即時資訊敏感度高（$2/$6）"),
-    # 高性價比
-    ("deepseek/deepseek-v3.2",     "DeepSeek V3.2",     "高性價比", "超低價，中文佳（$0.27/$0.4）"),
-    ("qwen/qwen3.6-flash",         "Qwen3.6 Flash",     "高性價比", "最省錢，繁中支援好（$0.19/$1.13）"),
-]
+from data.model_catalog import menu_models
+AVAILABLE_MODELS = menu_models()
 
 MODEL_IDS = [m[0] for m in AVAILABLE_MODELS]
 
@@ -96,8 +81,13 @@ def load_config() -> dict:
 def save_config(data: dict) -> None:
     existing = load_config()
     existing.update(data)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    import tempfile
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), suffix='.tmp')
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(existing, f, ensure_ascii=False, indent=4)
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, CONFIG_PATH)
 
 
 def is_first_run() -> bool:

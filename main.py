@@ -127,15 +127,15 @@ class AppLoader(QThread):
 def main():
     # ── 資料路徑初始化：確保 AppData 資料夾存在，舊版資料自動遷移 ──
     try:
-        from data.data_paths import migrate_from_old_location, cleanup_legacy_models
+        from data.data_paths import migrate_from_old_location
         migrate_from_old_location()
-        cleanup_legacy_models()
     except Exception:
         pass  # 遷移/清理失敗不應阻擋啟動，下次再試
 
     app = QApplication(sys.argv)
     app.setApplicationName("台股預測分析系統")
-    app.setApplicationVersion("1.0.0")
+    from updater.auto_updater import get_current_version
+    app.setApplicationVersion(get_current_version())
     app.setOrganizationName("StockPredictor")
 
     # 設定全域字體
@@ -196,4 +196,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if '--diagnose' in sys.argv:
+        from diagnostics import run
+        destination = sys.argv[sys.argv.index('--diagnose') + 1]
+        try:
+            sys.exit(run(destination, '--network-smoke' in sys.argv))
+        except Exception:
+            import traceback
+            Path(destination).mkdir(parents=True, exist_ok=True)
+            (Path(destination) / 'error.txt').write_text(traceback.format_exc(), encoding='utf-8')
+            sys.exit(1)
+    else:
+        main()

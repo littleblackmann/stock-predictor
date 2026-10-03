@@ -181,13 +181,17 @@ class PredictionPanel(QWidget):
         main_layout.addWidget(self._make_hline())
 
         # ── 明日預測主標題 ──
-        main_layout.addWidget(self._make_section_title("🤖 明日預測"))
+        main_layout.addWidget(self._make_section_title("🤖 下一交易日分析"))
 
         self.label_prediction = QLabel("等待預測...")
         self.label_prediction.setObjectName("labelPrediction")
         self.label_prediction.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label_prediction.setWordWrap(True)
         main_layout.addWidget(self.label_prediction)
+        self.label_dates = QLabel("")
+        self.label_dates.setWordWrap(True)
+        self.label_dates.setStyleSheet("color:#B6C7D8; font-size:14px;")
+        main_layout.addWidget(self.label_dates)
 
         # ── 上漲進度條 ──
         up_row = QHBoxLayout()
@@ -233,7 +237,7 @@ class PredictionPanel(QWidget):
         main_layout.addWidget(self._make_hline())
 
         # ── 模型效能 ──
-        main_layout.addWidget(self._make_section_title("📈 模型效能（回測）"))
+        main_layout.addWidget(self._make_section_title("📈 歷史分段驗證（1 交易日）"))
 
         self.label_metrics = QLabel("尚未訓練")
         self.label_metrics.setObjectName("labelMetrics")
@@ -244,7 +248,7 @@ class PredictionPanel(QWidget):
         main_layout.addWidget(self._make_hline())
 
         # ── SHAP 特徵解析（條形圖 + 文字備份）──
-        main_layout.addWidget(self._make_section_title("🔍 主要驅動因子"))
+        main_layout.addWidget(self._make_section_title("🔍 本次分析說明"))
 
         self.shap_bar = ShapBarWidget()
         main_layout.addWidget(self.shap_bar)
@@ -260,7 +264,7 @@ class PredictionPanel(QWidget):
         main_layout.addWidget(self._make_hline())
 
         # ── 3日走勢卡片 ──
-        main_layout.addWidget(self._make_section_title("📅 未來 3 日走勢（AI 推估）"))
+        main_layout.addWidget(self._make_section_title("📅 短線展望 · 1／3／5 交易日"))
 
         self.forecast_cards = []
         for i in range(3):
@@ -311,15 +315,16 @@ class PredictionPanel(QWidget):
             self.label_change.setText(f"{sign}{change} ({sign}{change_pct}%)")
             self.label_change.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: bold;")
 
+        self.label_dates.setText(f"資料截至 {result.get('data_date', '—')} 收盤\n預測目標 {result.get('target_date', '—')} 收盤")
         # ── 更新預測主標題 ──
         if pred_dir == 1:
-            text  = f"🔴 明日預測\n上漲 {up_prob:.1%}"
+            text  = f"🔴 偏多\n上漲估計 {up_prob:.1%}"
             color = "#FF3355"
         elif pred_dir == 0:
-            text  = f"🟢 明日預測\n下跌 {down_prob:.1%}"
+            text  = f"🟢 偏空\n下跌估計 {down_prob:.1%}"
             color = "#00CC66"
         else:
-            text  = "⚠️ 預測不確定"
+            text  = "🟡 暫無明確方向"
             color = "#FFAA44"
 
         self.label_prediction.setText(text)
@@ -338,29 +343,18 @@ class PredictionPanel(QWidget):
             self.confidence_bar.setVisible(False)
 
         # ── 動畫更新進度條 ──
-        self._animate_bar(self.bar_up,   int(up_prob   * 100))
-        self._animate_bar(self.bar_down, int(down_prob * 100))
+        self._animate_bar(self.bar_up,   round(up_prob * 100))
+        self._animate_bar(self.bar_down, 100 - round(up_prob * 100))
 
-        # ── 更新模型效能 ──
         if eval_m:
-            acc  = eval_m.get("accuracy",   0)
-            f1   = eval_m.get("f1_score",   0)
-            n    = eval_m.get("test_samples", 0)
-            cm   = eval_m.get("confusion_matrix", [])
-            cm_text = ""
-            if cm and len(cm) == 2:
-                tn, fp = cm[0][0], cm[0][1]
-                fn, tp = cm[1][0], cm[1][1]
-                cm_text = f"\nTP:{tp}  FP:{fp}\nFN:{fn}  TN:{tn}"
-
             self.label_metrics.setText(
-                f"準確率：{acc:.1%}\n"
-                f"F1 Score：{f1:.4f}\n"
-                f"測試樣本：{n} 筆"
-                f"{cm_text}"
+                f"模型命中率 {eval_m.get('accuracy',0):.1%}\n"
+                f"歷史多數方向基準 {eval_m.get('baseline_accuracy',0):.1%}\n"
+                f"驗證 {eval_m.get('test_samples',0)} 筆 · 3 段時間測試\n"
+                "歷史結果不保證未來；此處不是實際交易報酬"
             )
         else:
-            self.label_metrics.setText("（模型已載入，效能數據不適用）")
+            self.label_metrics.setText("尚無可用歷史驗證")
 
         # ── 更新 3 日走勢卡片 ──
         forecast_3d = result.get("forecast_3d", [])
@@ -408,7 +402,7 @@ class PredictionPanel(QWidget):
             self.label_sentiment.setText(
                 f"{emoji} 情緒：{label}（{score:+.2f}）\n"
                 f"分析 {count} 則新聞\n"
-                f"ML 原始：{raw_up:.1%} → 融合後：{up_prob:.1%} {diff_text}\n"
+                "新聞補充說明，未修改模型機率\n"
                 f"{reason}"
             )
             self.label_sentiment.setStyleSheet(
@@ -417,7 +411,7 @@ class PredictionPanel(QWidget):
                 f"border: 1px solid #3A3A3A;"
             )
         else:
-            self.label_sentiment.setText("AI 分析未啟用\n請按右上角 ⚙ 設定 API Key")
+            self.label_sentiment.setText(sentiment.get("reason", "新聞分析暫不可用"))
 
     def update_price_only(self, price_info: dict, symbol: str):
         """僅更新行情欄位（不觸及預測結果）"""
@@ -434,7 +428,8 @@ class PredictionPanel(QWidget):
 
     def reset(self):
         """重置面板至初始狀態"""
-        self.label_symbol.setText("📊 即時行情")
+        self.label_symbol.setText("📊 最近完整收盤行情")
+        self.label_dates.setText("")
         self.label_price.setText("--")
         self.label_change.setText("輸入代號後點擊預測")
         self.label_change.setStyleSheet("color: #3A5A7A; font-size: 12px;")
@@ -446,6 +441,8 @@ class PredictionPanel(QWidget):
         self.bar_down.setValue(0)
         self.label_metrics.setText("尚未訓練")
         self.label_explain.setText("--")
+        self.label_sentiment.setText("尚未分析")
+        self.confidence_bar.setVisible(False)
         self.shap_bar.set_data([])
 
     # ── 私有方法 ────────────────────────────────────────────────────
@@ -486,7 +483,7 @@ class PredictionPanel(QWidget):
         top_row.setSpacing(8)
 
         lbl_day = QLabel("--")
-        lbl_day.setFixedWidth(44)
+        lbl_day.setWordWrap(True)
         lbl_day.setStyleSheet(
             "color: #7A9ABE; font-size: 14px; font-weight: bold; "
             "border: none; background: transparent;"
@@ -506,7 +503,8 @@ class PredictionPanel(QWidget):
         )
 
         top_row.addWidget(lbl_day)
-        top_row.addWidget(lbl_trend)
+        lbl_trend.setWordWrap(True)
+        outer.addWidget(lbl_trend)
         top_row.addStretch()
         top_row.addWidget(lbl_conf)
 
@@ -518,7 +516,7 @@ class PredictionPanel(QWidget):
             "border: none; background: transparent;"
         )
 
-        outer.addLayout(top_row)
+        outer.insertLayout(0, top_row)
         outer.addWidget(lbl_reason)
 
         return {
@@ -548,7 +546,7 @@ class PredictionPanel(QWidget):
             card["lbl_trend"].setStyleSheet(
                 f"color: {color}; font-size: 14px; font-weight: bold; border: none; background: transparent;"
             )
-            card["lbl_conf"].setText(f"信心：{conf}")
+            card["lbl_conf"].setText(f"{conf}")
             card["lbl_conf"].setStyleSheet(
                 f"color: {conf_color.get(conf, '#FFCC44')}; font-size: 12px; border: none; background: transparent;"
             )
@@ -558,7 +556,7 @@ class PredictionPanel(QWidget):
         label = QLabel(text)
         label.setObjectName("sectionTitle")
         label.setStyleSheet(
-            "color: #4A8ACA; font-size: 11px; font-weight: bold; "
+            "color: #4A8ACA; font-size: 13px; font-weight: bold; "
             "letter-spacing: 1px; padding-bottom: 3px; "
             "border-bottom: 1px solid #3A3A3A;"
         )

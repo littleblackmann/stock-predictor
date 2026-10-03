@@ -8,7 +8,7 @@ from datetime import date
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem,
-    QHeaderView, QFileDialog, QMessageBox, QSizePolicy, QFrame
+    QHeaderView, QFileDialog, QMessageBox, QSizePolicy, QFrame, QComboBox
 )
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, QObject, Signal
 from PySide6.QtGui import QColor, QFont
@@ -52,6 +52,10 @@ class PredictionLogDialog(QDialog):
 
     COLUMNS = [
         ("預測日期",  "prediction_date", 100),
+        ("資料日", "data_date", 100),
+        ("目標日", "target_date", 100),
+        ("期限", "horizon", 55),
+        ("狀態", "evaluation_status", 90),
         ("股票",      "symbol",          90),
         ("預測",      "predicted",       60),
         ("上漲機率",  "up_prob",         80),
@@ -126,6 +130,11 @@ class PredictionLogDialog(QDialog):
         self.lbl_status = QLabel("💡 實際 / 漲跌% / 正確：預測目標日過後由「更新實際結果」自動回填")
         self.lbl_status.setStyleSheet("color: #4A6A8A; font-size: 11px;")
         top.addWidget(self.lbl_status, stretch=1)
+        self.horizon_filter = QComboBox()
+        for label, value in [("1 交易日",1),("3 交易日",3),("5 交易日",5)]:
+            self.horizon_filter.addItem(label,value)
+        self.horizon_filter.currentIndexChanged.connect(self._load_table)
+        top.addWidget(self.horizon_filter)
 
         self.btn_delete = QPushButton("🗑  刪除選取")
         self.btn_delete.setFixedHeight(32)
@@ -186,30 +195,28 @@ class PredictionLogDialog(QDialog):
 
     def _load_table(self):
         rows = PredictionLogger.load_all()
-        rows_rev = list(reversed(rows))   # 最新在最上面
-
+        horizon = str(self.horizon_filter.currentData())
+        indexed = [(i,r) for i,r in enumerate(rows) if r.get('horizon','1') == horizon]
         self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(rows_rev))
+        self.table.setRowCount(len(indexed))
 
         GREEN  = QColor("#00CC66")   # 下跌色（台灣：下跌=綠）
         RED    = QColor("#FF3355")   # 上漲色（台灣：上漲=紅）
         GRAY   = QColor("#5A7A9A")
         total  = len(rows)   # 原始 CSV 總筆數
 
-        for row_idx, (orig_idx, row) in enumerate(
-            zip(reversed(range(total)), rows_rev)
-        ):
-            values = [
-                row.get("prediction_date", ""),
-                row.get("symbol", ""),
-                row.get("predicted", ""),
-                f"{float(row['up_prob']):.1%}" if row.get("up_prob") else "",
-                f"{float(row['raw_up_prob']):.1%}" if row.get("raw_up_prob") else "—",
-                row.get("gpt_3day", ""),
-                row.get("actual", ""),
-                self._format_return(row.get("actual_return", "")),
-                {"True": "✓", "False": "✗", "": "—"}.get(row.get("correct", ""), "—"),
-            ]
+        for row_idx, (orig_idx, row) in enumerate(reversed(indexed)):
+            shown = dict(row)
+            for key in ('up_prob','raw_up_prob'):
+                try:
+                    shown[key] = f"{float(row[key]):.1%}"
+                except (ValueError,KeyError):
+                    shown[key] = '—'
+            shown['predicted'] = {'up':'偏多','down':'偏空','uncertain':'方向不明'}.get(row.get('predicted'), '—')
+            shown['evaluation_status'] = {'legacy':'舊版紀錄','pending':'待收盤驗證','final':'已驗證'}.get(row.get('evaluation_status'),'—')
+            shown['actual_return'] = self._format_return(row.get('actual_return',''))
+            shown['correct'] = {'True':'✓','False':'✗'}.get(row.get('correct'),'—')
+            values = [shown.get(key,'') for _,key,_ in self.COLUMNS]
 
             for col_idx, val in enumerate(values):
                 item = QTableWidgetItem(val)
@@ -221,7 +228,7 @@ class PredictionLogDialog(QDialog):
                 field = self.COLUMNS[col_idx][1]
                 if field == "predicted":
                     # 台灣慣例：上漲=紅、下跌=綠
-                    item.setForeground(RED if val == "up" else GREEN)
+                    item.setForeground(RED if row.get("predicted") == "up" else (GRAY if row.get("predicted")=="uncertain" else GREEN))
                 elif field == "actual":
                     if val == "up":
                         item.setForeground(RED)
@@ -254,12 +261,12 @@ class PredictionLogDialog(QDialog):
         self._update_stats()
 
     def _update_stats(self):
-        stats = PredictionLogger.get_stats()
+        stats = PredictionLogger.get_stats(self.horizon_filter.currentData())
         if stats["total"] == 0:
-            self.lbl_stats.setText("尚無已評估的預測記錄")
+            self.lbl_stats.setText(f"尚無新版已驗證方向訊號；方向不明 {stats['uncertain']} 筆。保留舊紀錄 {stats['legacy_total']} 筆，不混入新版統計。")
             return
 
-        parts = [f"整體準確率：{stats['accuracy']:.1%}（{stats['correct']}/{stats['total']} 筆）"]
+        parts = [f"新版明確方向命中率：{stats['accuracy']:.1%}（{stats['correct']}/{stats['total']} 筆）"]
         sym_parts = []
         for sym, sv in sorted(stats["by_symbol"].items()):
             sym_parts.append(f"{sym} {sv['accuracy']:.0%}（{sv['correct']}/{sv['total']}）")
@@ -298,7 +305,7 @@ class PredictionLogDialog(QDialog):
         count = len(orig_indices)
         reply = QMessageBox.question(
             self, "確認刪除",
-            f"確定要刪除選取的 {count} 筆記錄嗎？\n此操作無法復原。",
+            f"確定要刪除選取的 {count} 筆記錄嗎？\n刪除前會保留一份備份。",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )

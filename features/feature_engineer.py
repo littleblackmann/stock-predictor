@@ -79,7 +79,8 @@ class FeatureEngineer:
 
     def build_features(self, df: pd.DataFrame,
                        chip_df: pd.DataFrame | None = None,
-                       us_data: dict | None = None) -> pd.DataFrame:
+                       us_data: dict | None = None,
+                       include_latest: bool = False) -> pd.DataFrame:
         """
         輸入 OHLCV DataFrame，輸出包含所有特徵的完整 DataFrame
 
@@ -164,7 +165,8 @@ class FeatureEngineer:
 
         # --- 目標標籤：明天是否上漲 ---
         # 1 = 明天收盤 > 今天收盤（上漲），0 = 下跌或平盤
-        df["label"] = (df["Close"].shift(-1) > df["Close"]).astype(int)
+        future = df["Close"].shift(-1)
+        df["label"] = (future > df["Close"]).astype(float).where(future.notna())
 
         # --- 美股隔夜訊號 ---
         df = self._build_us_overnight(df, us_data)
@@ -182,8 +184,9 @@ class FeatureEngineer:
 
         # 移除因計算產生的 inf（除以零）與 NaN（頭部），以及最後一列（無明日標籤）
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.dropna(inplace=True)
-        df = df.iloc[:-1]  # 最後一天沒有明日標籤，移除
+        df.dropna(subset=[c for c in df.columns if c != "label"], inplace=True)
+        if not include_latest:
+            df = df.loc[df["label"].notna()]
 
         extras = []
         if self._has_us:

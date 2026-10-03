@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self._load_stylesheet()
         self._setup_window()
         self._setup_ui()
+        self._set_large_text(self.btn_large.isChecked(), persist=False)
         self._setup_tray()
         self._connect_signals()
         logger.info("MainWindow 初始化完成")
@@ -186,10 +187,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_watchlist)
 
         # 預測按鈕
-        self.btn_predict = QPushButton("▶  預測明天")
+        self.btn_predict = QPushButton("▶  短線分析")
         self.btn_predict.setObjectName("btnPredict")
         self.btn_predict.setFixedHeight(36)
-        self.btn_predict.setToolTip("下載最新資料並執行 Transformer + LightGBM 模型預測")
+        self.btn_predict.setToolTip("分析未來 1、3、5 個交易日，顯示歷史驗證與資料日期")
         layout.addWidget(self.btn_predict)
 
         # 預測記錄按鈕
@@ -198,6 +199,16 @@ class MainWindow(QMainWindow):
         self.btn_log.setFixedHeight(36)
         self.btn_log.setToolTip("查看歷史預測記錄與準確率報告")
         layout.addWidget(self.btn_log)
+
+        self.btn_overview = QPushButton("自選總覽")
+        self.btn_overview.setFixedHeight(36)
+        self.btn_overview.clicked.connect(self._show_overview)
+        layout.addWidget(self.btn_overview)
+        self.btn_large = QPushButton("大字")
+        self.btn_large.setCheckable(True)
+        self.btn_large.setChecked(load_config().get('large_text', False))
+        self.btn_large.toggled.connect(self._set_large_text)
+        layout.addWidget(self.btn_large)
 
         # 設定按鈕
         self.btn_settings = QPushButton("⚙")
@@ -509,7 +520,7 @@ class MainWindow(QMainWindow):
         direction = "上漲" if prediction.get("prediction") == 1 else "下跌"
         prob = up_p if prediction.get("prediction") == 1 else prediction.get("down_prob", 0)
         code = symbol.replace(".TW", "").replace(".TWO", "")
-        self._notify(f"{code} 預測完成", f"明日預測{direction}（{prob:.1%}）")
+        self._notify(f"{code} 分析完成", f"目標 {result.get('target_date','')}：" + ("方向不明" if prediction.get("prediction")==-1 else f"{direction}估計 {prob:.1%}"))
 
         logger.info(f"UI 更新完成：{symbol}")
 
@@ -540,9 +551,9 @@ class MainWindow(QMainWindow):
         # 更新狀態列
         up_p   = prediction.get("up_prob",  0)
         down_p = prediction.get("down_prob", 0)
-        direction = "🟢 上漲" if prediction.get("prediction") == 1 else "🔴 下跌"
+        direction = {1:"🔴 偏多",0:"🟢 偏空",-1:"🟡 方向不明"}.get(prediction.get("prediction"),"方向不明")
         self._show_status(
-            f"[{symbol}] 預測完成 — 明日{direction} "
+            f"[{symbol}] 目標 {result.get('target_date','')} — {direction} "
             f"({up_p:.1%} 上 / {down_p:.1%} 下)"
         )
         self.label_timestamp.setText(
@@ -571,7 +582,7 @@ class MainWindow(QMainWindow):
             self.btn_predict.setText("⏳ 預測中...")
             self._start_pulse()
         else:
-            self.btn_predict.setText("▶  預測明天")
+            self.btn_predict.setText("▶  短線分析")
             self._stop_pulse()
             self.progress_bar.setValue(0)
 
@@ -711,19 +722,22 @@ class MainWindow(QMainWindow):
         QThreadPool.globalInstance().start(worker)
 
     def _update_model_status(self):
-        """啟動時在狀態列顯示模型新鮮度"""
-        from models.lgbm_classifier import LGBMClassifier
-        symbol = self.input_symbol.text().strip()
-        if not symbol:
-            self.label_timestamp.setText("")
-            return
-        needs, reason = LGBMClassifier.needs_retrain(symbol)
-        if needs:
-            self.label_timestamp.setText(f"⚠️ {reason}")
-            self.label_timestamp.setStyleSheet("color: #FFAA44; font-size: 11px;")
-        else:
-            self.label_timestamp.setText(f"✅ {reason}")
-            self.label_timestamp.setStyleSheet("color: #00AA55; font-size: 11px;")
+        self.label_timestamp.setText("完整收盤資料 · 1／3／5 交易日")
+
+    def _show_overview(self):
+        from ui.overview_dialog import OverviewDialog
+        OverviewDialog(self).exec()
+
+    def _set_large_text(self, enabled, persist=True):
+        font = self.font()
+        font.setPointSize(12 if enabled else 10)
+        self.setFont(font)
+        if hasattr(self, 'pred_panel'):
+            for label in (self.pred_panel.label_metrics, self.pred_panel.label_explain, self.pred_panel.label_dates):
+                label.setStyleSheet(f"color:#C4D0DD; font-size:{17 if enabled else 14}px;")
+        if persist:
+            from data.config_manager import save_config
+            save_config({'large_text': enabled})
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -735,13 +749,23 @@ class MainWindow(QMainWindow):
 
     def _check_for_update_bg(self):
         """背景檢查是否有新版本"""
-        try:
-            from updater.auto_updater import check_for_update
-            update_info = check_for_update()
-            if update_info:
-                self._show_update_dialog(update_info)
-        except Exception as e:
-            logger.debug(f"更新檢查跳過：{e}")
+        from PySide6.QtCore import QRunnable, QObject, Signal
+        class _Signals(QObject):
+            done = Signal(object)
+        class _Worker(QRunnable):
+            def __init__(self):
+                super().__init__()
+                self.signals = _Signals()
+            def run(self):
+                from updater.auto_updater import check_for_update
+                self.signals.done.emit(check_for_update())
+        self._update_job = _Worker()
+        self._update_job.signals.done.connect(self._update_ready)
+        QThreadPool.globalInstance().start(self._update_job)
+
+    def _update_ready(self, info):
+        if info:
+            self._show_update_dialog(info)
 
     def _show_update_dialog(self, update_info: dict):
         """顯示更新提示對話框"""

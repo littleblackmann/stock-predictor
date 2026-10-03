@@ -5,9 +5,8 @@
     python build.py
 
 輸出：
-    dist/台股預測分析系統/              ← 整個資料夾給對方就能用
-    台股預測分析系統_vX.X.X.zip        ← 完整安裝包（新用戶）
-    台股預測分析系統_vX.X.X_patch.zip  ← 差量更新包（已安裝用戶）
+    dist/vX.X.X/台股預測分析系統/      ← 可直接啟動的版本化資料夾
+    StockPredictor-vX.X.X.zip          ← 完整安裝與跨版本更新包
 
 重要：
     v1.1.0 起，使用者資料（config、watchlist、模型、快取、日誌）
@@ -39,7 +38,9 @@ try:
 except Exception:
     APP_VERSION = "0.0.0"
 
-OUTPUT_ZIP   = f"台股預測分析系統_v{APP_VERSION}.zip"
+DIST_BASE = os.path.join("dist", f"v{APP_VERSION}")
+DIST_DIR = os.path.join(DIST_BASE, APP_NAME)
+OUTPUT_ZIP = f"StockPredictor-v{APP_VERSION}.zip"
 PATCH_ZIP    = f"台股預測分析系統_v{APP_VERSION}_patch.zip"
 MANIFEST_SAVE = f"build_manifest_v{APP_VERSION}.json"  # 每個版本獨立 manifest，重複打包不會覆蓋舊版基準線
 
@@ -177,22 +178,24 @@ def build():
 
     print("\n[0/4] 環境確認...")
     if not check_env():
-        return
+        raise SystemExit(1)
 
-    # 清理舊的輸出
+    # Versioned output preserves earlier installed builds. Rebuilds get their own
+    # timestamped directory instead of deleting a potentially running executable.
+    global DIST_BASE, DIST_DIR
     if os.path.exists(DIST_DIR):
-        print(f"\n  清理舊版本：{DIST_DIR}")
-        shutil.rmtree(DIST_DIR)
+        DIST_BASE += '-' + datetime.now().strftime('%Y%m%d-%H%M%S')
+        DIST_DIR = os.path.join(DIST_BASE, APP_NAME)
 
     print("\n[1/4] PyInstaller 打包中（約需 5～15 分鐘）...")
     result = subprocess.run(
-        [sys.executable, "-m", "PyInstaller", SPEC_FILE, "--noconfirm"],
+        [sys.executable, "-m", "PyInstaller", SPEC_FILE, "--noconfirm", "--distpath", DIST_BASE],
         cwd=os.path.dirname(os.path.abspath(__file__))
     )
 
     if result.returncode != 0:
         print("\n[FAIL] 打包失敗！請查看上方錯誤訊息。")
-        return
+        raise SystemExit(1)
 
     # ── 產生 manifest 並寫入 dist ──
     print("\n[2/4] 產生檔案清單 (manifest)...")
@@ -208,12 +211,8 @@ def build():
     new_manifest["manifest.json"] = _hash_file(manifest_in_dist)
 
     # ── 差量更新包 ──
-    old_manifest = _find_previous_manifest(APP_VERSION)
-
-    if old_manifest:
-        create_patch_zip(DIST_DIR, old_manifest, new_manifest)
-    else:
-        print("  [PATCH] 找不到前一版 manifest，無法產生差量更新包")
+    # v1.7 is a full update: older clients cannot enforce a patch base version.
+    print("  [UPDATE] 完整更新包支援跨舊版本升級，不發布無基準差量包")
 
     # 儲存本次 manifest 供下次比對
     with open(MANIFEST_SAVE, "w", encoding="utf-8") as f:
@@ -225,7 +224,7 @@ def build():
         for root, dirs, files in os.walk(DIST_DIR):
             for file in files:
                 filepath = os.path.join(root, file)
-                arcname  = os.path.relpath(filepath, "dist")
+                arcname  = os.path.relpath(filepath, DIST_BASE)
                 zf.write(filepath, arcname)
 
     zip_size = os.path.getsize(OUTPUT_ZIP) / 1024 / 1024
@@ -234,11 +233,8 @@ def build():
     print(f"[OK] 打包完成！")
     print(f"   資料夾：{DIST_DIR}")
     print(f"   完整包：{OUTPUT_ZIP}  ({zip_size:.0f} MB)")
-    if os.path.exists(PATCH_ZIP):
-        patch_size = os.path.getsize(PATCH_ZIP) / 1024 / 1024
-        print(f"   差量包：{PATCH_ZIP}  ({patch_size:.1f} MB)")
-    print(f"\n[NOTE] 上傳 Release 時，full + patch 都上傳：")
-    print(f'   gh release create vX.X.X "{OUTPUT_ZIP}" "{PATCH_ZIP}" ...')
+    print("\n[NOTE] 此版本只發布完整包；舊客戶端無法驗證差量基準版本。")
+    print(f'   gh release create v{APP_VERSION} "{OUTPUT_ZIP}" ...')
     print(f"{'=' * 60}")
 
 

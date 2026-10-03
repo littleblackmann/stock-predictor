@@ -137,7 +137,9 @@ class LGBMClassifier:
         y = labels
 
         # ── 載入上一代模型作為增量學習基礎 ──
-        prev_models = self._load_previous_ensemble()
+        # Old trees have thresholds in a different scaler/embedding coordinate
+        # system. Never continue them after fitting a new preprocessing pipeline.
+        prev_models = []
 
         # ── TimeSeriesSplit Ensemble 訓練 ──
         tscv = TimeSeriesSplit(n_splits=ENSEMBLE_SIZE)
@@ -181,7 +183,7 @@ class LGBMClassifier:
             )
 
             # 評估
-            y_pred = model.predict(X_test)
+            y_pred = model.predict(X_test_s)
             acc = accuracy_score(y_test, y_pred)
             f1  = f1_score(y_test, y_pred, zero_division=0)
 

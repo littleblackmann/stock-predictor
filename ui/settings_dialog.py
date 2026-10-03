@@ -10,12 +10,29 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QComboBox, QFrame,
     QWidget, QTabWidget, QScrollArea
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, Signal, QRunnable, QThreadPool
 from PySide6.QtGui import QFont
 
 from data.config_manager import (
     load_config, save_config, AVAILABLE_MODELS, DEFAULT_MODEL,
 )
+
+
+class _CatalogSignals(QObject):
+    done = Signal(object, str)
+
+
+class _CatalogWorker(QRunnable):
+    def __init__(self):
+        super().__init__()
+        self.signals = _CatalogSignals()
+
+    def run(self):
+        from data.model_catalog import refresh_catalog
+        try:
+            self.signals.done.emit(refresh_catalog(), "")
+        except Exception:
+            self.signals.done.emit(None, "連線失敗，保留原清單與選擇，請稍後重試")
 
 
 class SettingsDialog(QDialog):
@@ -26,6 +43,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("⚙  系統設定")
         self.setMinimumWidth(520)
         self.setMinimumHeight(480)
+        self.resize(680, 740)
         self.setModal(True)
         self._setup_ui()
         self._load_current()
@@ -81,7 +99,12 @@ class SettingsDialog(QDialog):
             }
         """)
 
-        self.tabs.addTab(self._build_api_tab(), "API 設定")
+        api_scroll = QScrollArea()
+        api_scroll.setWidgetResizable(True)
+        api_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        api_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        api_scroll.setWidget(self._build_api_tab())
+        self.tabs.addTab(api_scroll, "API 設定")
         self.tabs.addTab(self._build_guide_tab(), "使用說明")
         self.tabs.addTab(self._build_about_tab(), "關於 / 更新")
         layout.addWidget(self.tabs, stretch=1)
@@ -135,8 +158,8 @@ class SettingsDialog(QDialog):
         # 警語框
         warning = QLabel(
             "⚠  API Key 為選填。\n"
-            "不填入仍可使用技術面預測（Transformer + LightGBM），\n"
-            "但將停用「AI 新聞情緒分析」與「未來 3 日走勢」功能。"
+            "不填入仍可使用 1、3、5 交易日量化預測，\n"
+            "填入後可另外使用 AI 新聞分析；模型費用由 OpenRouter 收取。"
         )
         warning.setWordWrap(True)
         warning.setStyleSheet(
@@ -179,7 +202,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_hline())
         layout.addWidget(self._make_label("Brave Search API Key（選填）"))
 
-        brave_hint = QLabel("啟用後可取得更深入的新聞與產業分析，提升預測準確度")
+        brave_hint = QLabel("啟用後可取得新聞摘要與產業資訊，並不保證提高預測準確率")
         brave_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
         layout.addWidget(brave_hint)
 
@@ -216,23 +239,9 @@ class SettingsDialog(QDialog):
             "color: #E0E6F0; selection-background-color: #3A5A3A; }"
         )
 
-        # 依廠商分組列出前 10 大模型（清單見 data/config_manager.AVAILABLE_MODELS）
-        self._model_desc = {m[0]: m[3] for m in AVAILABLE_MODELS}
-        current_group = None
-        for model_id, display, group, desc in AVAILABLE_MODELS:
-            if group != current_group:
-                if current_group is not None:
-                    self.combo_model.insertSeparator(self.combo_model.count())
-                header_idx = self.combo_model.count()
-                self.combo_model.addItem(f"── {group} ──")
-                self.combo_model.model().item(header_idx).setEnabled(False)
-                current_group = group
-            item_idx = self.combo_model.count()
-            self.combo_model.addItem(f"  {display}", model_id)
-            self.combo_model.setItemData(
-                item_idx, f"{model_id}\n{desc}", Qt.ItemDataRole.ToolTipRole
-            )
-
+        self._model_desc = {}
+        self._populate_models(AVAILABLE_MODELS)
+        self.combo_model.setMaxVisibleItems(18)
         layout.addWidget(self.combo_model)
 
         # 選到哪個模型就顯示該模型的說明與參考費用
@@ -240,6 +249,20 @@ class SettingsDialog(QDialog):
         self.label_model_hint.setWordWrap(True)
         self.label_model_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
         layout.addWidget(self.label_model_hint)
+        model_tools = QHBoxLayout()
+        self.model_search = QLineEdit()
+        self.model_search.setFixedHeight(36)
+        self.model_search.setPlaceholderText("搜尋模型名稱或廠商")
+        self.model_search.textChanged.connect(self._filter_models)
+        model_tools.addWidget(self.model_search)
+        self.btn_refresh_models = QPushButton("更新模型清單")
+        self.btn_refresh_models.clicked.connect(self._refresh_models)
+        model_tools.addWidget(self.btn_refresh_models)
+        layout.addLayout(model_tools)
+        from data.model_catalog import load_catalog
+        self.catalog_status = QLabel("清單更新：" + load_catalog().get('updated_at','')[:10] + " · 不會自動切換模型")
+        self.catalog_status.setWordWrap(True)
+        layout.addWidget(self.catalog_status)
 
         # 標籤建好後才接訊號，避免初始化期間觸發時抓不到 label
         self.combo_model.currentIndexChanged.connect(self._on_model_changed)
@@ -247,6 +270,44 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return tab
+
+    def _populate_models(self, entries, selected=None):
+        self.combo_model.blockSignals(True)
+        self.combo_model.clear()
+        self._model_desc = {m[0]:m[3] for m in entries}
+        for model_id, display, group, desc in entries:
+            prefix = "★ " if group == "精選模型" else ""
+            self.combo_model.addItem(prefix + display, model_id)
+            self.combo_model.setItemData(self.combo_model.count()-1, desc, Qt.ItemDataRole.ToolTipRole)
+        if selected and self.combo_model.findData(selected) < 0:
+            self.combo_model.addItem("目前設定（未列於目錄）：" + selected, selected)
+            self._model_desc[selected] = "原設定已保留；服務是否可用需由供應商確認"
+        if selected:
+            self.combo_model.setCurrentIndex(self.combo_model.findData(selected))
+        self.combo_model.blockSignals(False)
+
+    def _filter_models(self, text):
+        for i in range(self.combo_model.count()):
+            haystack = (self.combo_model.itemText(i) + ' ' + str(self.combo_model.itemData(i))).lower()
+            self.combo_model.view().setRowHidden(i, text.lower() not in haystack)
+
+    def _refresh_models(self):
+        self.btn_refresh_models.setEnabled(False)
+        self.catalog_status.setText("正在讀取 OpenRouter 公開目錄…")
+        self._refresh_job = _CatalogWorker()
+        self._refresh_job.signals.done.connect(self._catalog_ready)
+        QThreadPool.globalInstance().start(self._refresh_job)
+
+    def _catalog_ready(self, catalog, error):
+        self.btn_refresh_models.setEnabled(True)
+        if error:
+            self.catalog_status.setText(error)
+            return
+        from data.model_catalog import menu_models
+        self._populate_models(menu_models(catalog), self.combo_model.currentData())
+        self.model_search.clear()
+        self._on_model_changed()
+        self.catalog_status.setText("清單更新：" + catalog['updated_at'][:10] + " · 原模型選擇已保留")
 
     def _on_model_changed(self, *_):
         """更新模型說明文字"""
@@ -278,12 +339,12 @@ class SettingsDialog(QDialog):
         # ── 功能簡介 ──
         layout.addWidget(self._make_section_title("功能簡介"))
         layout.addWidget(self._make_guide_text(
-            "本系統結合 Transformer 深度學習與 LightGBM 機器學習模型，\n"
-            "透過技術面指標、籌碼面數據、美股隔夜訊號等 84 維特徵，\n"
-            "對台股個股進行明日漲跌預測。\n\n"
+            "本系統使用獨立的短線 LightGBM 模型與機率校準，\n"
+            "透過技術面與美股歷史訊號，採用完整收盤資料，\n"
+            "分別分析未來 1、3、5 個交易日相對基準日的漲跌。\n\n"
             "若設定 OpenRouter API Key，可額外啟用：\n"
             "• AI 新聞情緒分析（搭配 Brave Search 效果更佳）\n"
-            "• 未來 3 日走勢預測"
+            "• 新聞作為補充說明，不直接修改模型機率"
         ))
 
         layout.addWidget(self._make_hline())
@@ -291,17 +352,17 @@ class SettingsDialog(QDialog):
         # ── 模型成長說明 ──
         layout.addWidget(self._make_section_title("模型準確度"))
         layout.addWidget(self._make_guide_card(
-            "📈  模型會隨使用時間成長",
-            "系統採用累積式訓練機制，每次預測都會自動學習最新市場數據。\n"
-            "建議持續使用 3～6 個月，讓模型累積足夠的歷史資料，\n"
-            "預測準確度會逐步提升。初期準確率較低屬正常現象。",
+            "📈  以實際驗證判斷模型表現",
+            "系統按時間順序訓練、校準與驗證，每段測試只使用過去資料。\n"
+            "畫面同時顯示模型與歷史多數方向基準的成績，\n"
+            "使用越久不代表一定越準；方向不明時不強行給出漲跌結論。",
             "#1A2A3A", "#2A4A6A"
         ))
 
         layout.addWidget(self._make_guide_card(
             "🔄  自動重訓機制",
             "系統會在每次啟動時自動回填歷史預測結果，\n"
-            "並在準確率低於門檻時自動觸發模型重訓，\n"
+            "新交易日或行情修訂時會更新模型；同資料再次查詢使用快取，\n"
             "無需手動操作。",
             "#1A2A3A", "#2A4A6A"
         ))
@@ -376,6 +437,12 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {"version":"v1.7.0", "date":"2026-10-04", "changes":[
+                "1、3、5 個交易日獨立預測，完整收盤資料與時間分段驗證",
+                "清楚顯示資料日期、回測基準、方向不明與新版實際紀錄",
+                "更新 OpenRouter 模型、費用、搜尋與線上更新清單",
+                "保留 API Key、自選股與舊紀錄，舊紀錄自動備份",
+            ]},
             {
                 "version": "v1.6.2",
                 "date": "2026-07-24",
@@ -601,10 +668,8 @@ class SettingsDialog(QDialog):
         self.input_key.setText(config.get("openrouter_api_key", ""))
         self.input_brave_key.setText(config.get("brave_api_key", ""))
         current_model = config.get("openrouter_model", "") or DEFAULT_MODEL
-        for i in range(self.combo_model.count()):
-            if self.combo_model.itemData(i) == current_model:
-                self.combo_model.setCurrentIndex(i)
-                break
+        from data.model_catalog import menu_models
+        self._populate_models(menu_models(), current_model)
         self._on_model_changed()
 
     def _on_save(self):

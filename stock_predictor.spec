@@ -16,6 +16,7 @@ ROOT = os.path.abspath('.')
 # 注意：使用者資料（config, watchlist, models, cache, logs）已移至 AppData，
 #       打包只需包含 UI 素材和版本檔。
 datas = [
+    (os.path.join(ROOT, 'data', 'openrouter_models.json'), 'data'),
     # UI 樣式
     (os.path.join(ROOT, 'ui', 'styles.qss'),        'ui'),
     # 圖示 / Logo
@@ -96,6 +97,14 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Qt uses the Windows ICU API (unsuffixed ucnv_* exports). A build-machine
+# Poppler directory on PATH can make bindepend collect an incompatible ICU 78
+# with the same DLL basename. Let Windows resolve its own system ICU library.
+a.binaries = [
+    entry for entry in a.binaries
+    if os.path.basename(entry[0]).lower() not in {'icuuc.dll', 'icudt78.dll'}
+]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

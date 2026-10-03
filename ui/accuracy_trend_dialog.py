@@ -124,7 +124,7 @@ class AccuracyTrendDialog(QDialog):
         回傳 (week_labels, accuracies, overall_accuracy)
         """
         rows = PredictionLogger.load_all()
-        evaluated = [r for r in rows if r.get("correct") in ("True", "False")]
+        evaluated = [r for r in rows if r.get("correct") in ("True", "False") and r.get("evaluation_status")=="final" and r.get("horizon")=="1"]
         if not evaluated:
             return [], [], None
 

@@ -24,35 +24,32 @@ logger = get_logger(__name__)
 
 
 def _get_ssl_context():
-    """取得 SSL context，Win10 舊版可能需要跳過驗證"""
+    ctx = ssl.create_default_context()
     try:
-        ctx = ssl.create_default_context()
-        # 嘗試用 certifi 的憑證（如果有）
-        try:
-            import certifi
-            ctx.load_verify_locations(certifi.where())
-        except ImportError:
-            pass
-        return ctx
-    except Exception:
-        # 最後手段：跳過 SSL 驗證（Win10 相容）
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except ImportError:
+        pass
+    return ctx
 
 
 def _urlopen_safe(req, timeout=30):
-    """urlopen 的安全包裝，自動處理 Win10 SSL 問題"""
-    try:
-        return urlopen(req, timeout=timeout)
-    except (URLError, ssl.SSLError):
-        # SSL 失敗，用不驗證的 context 重試
-        logger.warning("SSL 驗證失敗，使用備用連線方式")
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return urlopen(req, timeout=timeout, context=ctx)
+    return urlopen(req, timeout=timeout, context=_get_ssl_context())
+
+
+def _validate_archive(zf, extract_dir):
+    from pathlib import PurePosixPath
+    root = Path(extract_dir).resolve()
+    for item in zf.infolist():
+        name = item.filename.replace('\\', '/')
+        parts = PurePosixPath(name).parts
+        target = (root / name).resolve()
+        if name.startswith('/') or ':' in name or '..' in parts or not target.is_relative_to(root):
+            raise ValueError('更新包包含不安全路徑')
+        if (item.external_attr >> 16) & 0o170000 == 0o120000:
+            raise ValueError('更新包包含不支援的連結')
+    if zf.testzip() is not None:
+        raise ValueError('更新包損毀，請重新下載')
 
 
 # ── 設定 ──────────────────────────────────────────────────────────
@@ -154,15 +151,13 @@ def check_for_update() -> dict | None:
     full_url = None
     for asset in data.get("assets", []):
         name = asset.get("name", "")
-        if name.endswith("_patch.zip"):
+        if name.endswith(f"_from_v{current}_patch.zip"):
             patch_url = asset.get("browser_download_url")
-        elif name.endswith(".zip"):
+        elif name.endswith(".zip") and not name.endswith("_patch.zip"):
             full_url = asset.get("browser_download_url")
 
     download_url = patch_url or full_url
 
-    if not download_url:
-        download_url = data.get("zipball_url")
 
     if not download_url:
         logger.warning("找不到可下載的更新檔案")
@@ -206,6 +201,12 @@ def download_and_apply(download_url: str, new_version: str,
         True: 更新成功，需要重啟
         False: 更新失敗
     """
+    from urllib.parse import urlparse
+    parsed = urlparse(download_url)
+    if parsed.scheme != 'https' or parsed.hostname != 'github.com':
+        return False
+    if not new_version or any(not part.isdigit() for part in new_version.split('.')):
+        return False
     tmp_dir = tempfile.mkdtemp(prefix="stock_update_")
     zip_path = os.path.join(tmp_dir, "update.zip")
 
@@ -233,6 +234,7 @@ def download_and_apply(download_url: str, new_version: str,
         # ── 解壓 ──
         extract_dir = os.path.join(tmp_dir, "extracted")
         with zipfile.ZipFile(zip_path, "r") as zf:
+            _validate_archive(zf, extract_dir)
             zf.extractall(extract_dir)
 
         # 找到實際的程式根目錄（可能在子資料夾裡）
@@ -242,6 +244,12 @@ def download_and_apply(download_url: str, new_version: str,
         else:
             source_dir = extract_dir
 
+        if not is_patch and not os.path.isfile(os.path.join(source_dir, '台股預測分析系統.exe')):
+            raise ValueError('更新包缺少應用程式，保留目前版本')
+        packaged_version = os.path.join(source_dir, '_internal', 'version.json')
+        with open(packaged_version, encoding='utf-8') as f:
+            if json.load(f).get('version') != new_version:
+                raise ValueError('更新包版本不符')
         # ── 預寫 version.json 到解壓目錄 ──
         # 在 Python 端寫好，xcopy 會一起複製，避免 bat 用 echo 寫中文路徑失敗
         ver_in_source = os.path.join(source_dir, "version.json")
@@ -293,8 +301,7 @@ start "" "{exe_path}"
 
 :CLEANUP
 timeout /t 3 /nobreak >nul
-rd /s /q "{tmp_dir}" >nul 2>&1
-del "%~f0" >nul 2>&1
+REM 暫存更新包保留供故障排查，由系統暫存清理處理
 """)
 
         # ── 啟動更新腳本並退出 ──
