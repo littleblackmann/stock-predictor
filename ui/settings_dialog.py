@@ -437,6 +437,10 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {"version": "v1.7.1", "date": "2026-10-04", "changes": [
+                "手動檢查可更新已跳過的版本；關閉提示只會稍後提醒。",
+                "無法取得版本資訊時顯示檢查失敗，不再誤報已是最新版。",
+            ]},
             {"version":"v1.7.0", "date":"2026-10-04", "changes":[
                 "1、3、5 個交易日獨立預測，完整收盤資料與時間分段驗證",
                 "清楚顯示資料日期、回測基準、方向不明與新版實際紀錄",
@@ -633,7 +637,7 @@ class SettingsDialog(QDialog):
 
         try:
             from updater.auto_updater import check_for_update
-            result = check_for_update()
+            result = check_for_update(manual=True)
             if result:
                 self.update_status_label.setText(
                     f"發現新版本 v{result['version']}！"

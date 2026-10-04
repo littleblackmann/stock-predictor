@@ -7,6 +7,7 @@
 """
 import json
 import os
+import re
 import ssl
 import sys
 import shutil
@@ -111,20 +112,29 @@ def _get_update_config() -> dict:
         return {"owner": GITHUB_OWNER, "repo": GITHUB_REPO}
 
 
-def check_for_update() -> dict | None:
+class UpdateCheckError(RuntimeError):
+    """A manual check could not establish the available release."""
+
+
+def check_for_update(*, manual: bool = False) -> dict | None:
     """
     檢查 GitHub Releases 是否有新版本。
 
     Returns:
-        None: 已是最新版或無法連線
+        None: 已是最新版；自動檢查時也可能為跳過或檢查失敗
         dict: {"version": "1.1.0", "download_url": "...", "release_notes": "..."}
     """
+    def failed(message):
+        logger.warning(message)
+        if manual:
+            raise UpdateCheckError(message)
+        return None
+
     cfg = _get_update_config()
     owner, repo = cfg["owner"], cfg["repo"]
 
     if not owner or not repo:
-        logger.debug("未設定 GitHub 倉庫，跳過更新檢查")
-        return None
+        return failed("尚未設定更新來源，無法確認最新版本")
 
     api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
 
@@ -137,20 +147,32 @@ def check_for_update() -> dict | None:
             data = json.loads(resp.read().decode("utf-8"))
     except (URLError, ssl.SSLError, json.JSONDecodeError, OSError) as e:
         logger.warning(f"更新檢查失敗：{e}")
-        return None
+        return failed("無法取得更新資訊，請確認網路連線後再試")
 
-    remote_version = data.get("tag_name", "").lstrip("v")
+    if not isinstance(data, dict):
+        return failed("更新來源回傳的資料不完整，請稍後再試")
+    tag = data.get("tag_name", "")
+    if not isinstance(tag, str) or not re.fullmatch(r"v?\d+\.\d+\.\d+", tag):
+        return failed("更新來源未提供有效版本，請稍後再試")
+    remote_version = tag.lstrip("v")
     current = get_current_version()
 
-    if not remote_version or not _is_newer(remote_version, current):
+    if not _is_newer(remote_version, current):
         logger.info(f"已是最新版本 v{current}")
         return None
 
     # 找到 ZIP 下載連結（優先 patch，fallback full）
     patch_url = None
     full_url = None
-    for asset in data.get("assets", []):
+    assets = data.get("assets", [])
+    if not isinstance(assets, list):
+        return failed("更新來源未提供有效下載清單，請稍後再試")
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
         name = asset.get("name", "")
+        if not isinstance(name, str):
+            continue
         if name.endswith(f"_from_v{current}_patch.zip"):
             patch_url = asset.get("browser_download_url")
         elif name.endswith(".zip") and not name.endswith("_patch.zip"):
@@ -160,15 +182,14 @@ def check_for_update() -> dict | None:
 
 
     if not download_url:
-        logger.warning("找不到可下載的更新檔案")
-        return None
+        return failed("發現新版本，但尚無可用的更新包，請稍後再試")
 
     is_patch = (download_url == patch_url)
     logger.info(f"更新模式：{'差量 (patch)' if is_patch else '完整 (full)'}")
 
     # 檢查是否已跳過此版本
     skipped = _load_skipped_version()
-    if skipped == remote_version:
+    if not manual and skipped == remote_version:
         logger.info(f"使用者已跳過 v{remote_version}")
         return None
 

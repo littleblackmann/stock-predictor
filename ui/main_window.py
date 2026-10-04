@@ -787,8 +787,9 @@ class MainWindow(QMainWindow):
         )
 
         btn_update = msg.addButton("立即更新", QMessageBox.ButtonRole.AcceptRole)
-        btn_skip   = msg.addButton("跳過此版本", QMessageBox.ButtonRole.RejectRole)
-        btn_later  = msg.addButton("稍後提醒", QMessageBox.ButtonRole.DestructiveRole)
+        btn_skip   = msg.addButton("跳過此版本", QMessageBox.ButtonRole.ActionRole)
+        btn_later  = msg.addButton("稍後提醒", QMessageBox.ButtonRole.RejectRole)
+        msg.setEscapeButton(btn_later)
 
         msg.exec()
         clicked = msg.clickedButton()
