@@ -15,7 +15,7 @@
 ## 驗證
 
 - 原有 32 項加新增 10 項，共 42 項 unittest 通過：中斷 partial bytes、提早 EOF、跨次續傳、忽略 Range、錯誤 Range／大小、SHA 損毀、已完成快取、重試上限、阻止錯誤包安裝及正確 ZIP 準備。
-- 實際 Qt 主執行緒計時器在下載 worker 模擬等待期間仍運作；確認 IO 在其他執行緒，失敗訊息含具体原因。
+- 實際 Qt 主執行緒計時器在下載 worker 模擬等待期間仍運作；確認 IO 在其他執行緒，失敗訊息含具體原因。
 - 公開 v1.7.1 資產實測 Range `1048576-1114111` 回應 206，下載 65,536 bytes 與本機已驗證 ZIP 同位置內容一致；報告 `build/verification/download-range-v171.json`。
 - 舊 ZIP 最長相對路徑 137 字元，本機典型暫存解壓完整路徑 203 字元；沒有證據顯示此包在本機會超過 Windows 260 字元限制。
 
@@ -28,4 +28,11 @@
 - 無螢幕測試最初發生 ucrtbase `0xc0000409`；對照 v1.7.1 也重現相同 GPU context lost，改用軟體繪圖可通過，一般 Windows 模式也通過。未修改系統繪圖設定或正式應用預設，證據保留於 `diag-baseline`、`diag-software`、`packaged-v172-default-windows`、`packaged-v172-windows`。
 - 使用 v1.6.2 原始更新器讀取已驗證的本機新 ZIP 串流，完整下載 350,983,858 bytes、解壓 4,964 個檔案並產生更新 batch。攔截 installer 程序以避免關閉測試程式；另在隔離路徑執行原生 xcopy，同參數複製後全部 manifest 及版本一致。此項不是媽媽電腦的實際網路／關閉／重啟端到端測試。
 
-公開發布結果待最終驗證後補記。
+## 公開發布與實際續傳驗證
+
+- 程式提交 `95e96ba6f30d5c5aa5ae163be045ff3df9e07a86` 已推送 master；GitHub `v1.7.2` 已公開並設為 latest，非 draft／prerelease。ZIP size／asset digest 與本機驗證包相同，匿名 HEAD 200。
+- 原 v1.6.2 更新器連到公開 latest，1.5.5／1.6.0／1.6.1／1.6.2／1.7.1 均選到 1.7.2 的正式完整 ZIP；新版手動檢查也取得正確 size／SHA-256 metadata。
+- 使用新版下載器實際下載公開 1.7.2 ZIP，在第一個回應讀取 1 MiB 後刻意注入連線中斷。第二次请求 `Range: bytes=1048576-` 得到 HTTP 206，下載至 350,983,858 bytes 並通過 SHA-256；本機耗時 71.2 秒，不代表其他網路的固定下載時間。
+- 證據：`build/verification/public-download-v172-report.json`、`public-modern-client-v172.json`、`legacy-updater-v172-live.json`。這是新版下載器的實際網路續傳證據；不宣稱媽媽目前的舊下載器已獲得續傳功能。
+- 網站提交 `91169cf9f49f64accf71eadf5a8ea01c40e8b822` 已推送 main；Pages run `37230607212` 成功。公開頁與本機 HTML 正規化換行後一致；兩個下載備援／預設版號均 1.7.2，三處大小 351 MB，解壓約 0.9 GB。
+- 尚未收到媽媽失敗階段或日誌，也未操作她的電腦。請使用者重試 1.7.2；如果舊版仍失敗，透過瀏覽器下载整個完整包到新資料夾並啟動，可沿用同一 Windows 使用者的 AppData 個人資料。
