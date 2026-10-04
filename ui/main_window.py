@@ -802,68 +802,60 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"已跳過 v{version}，下個版本會再通知", 5000)
 
     def _do_update(self, update_info: dict):
-        """執行更新"""
-        from updater.auto_updater import download_and_apply
-
-        version = update_info["version"]
-
-        # 建立明顯的進度對話框
-        progress = QProgressDialog(
-            f"正在下載更新 v{version}...", None, 0, 100, self
-        )
-        progress.setWindowTitle("台股預測分析系統 — 更新中")
+        """Download and validate in a worker; keep the dialog responsive."""
+        from workers.update_worker import UpdateWorker
+        if getattr(self, '_update_running', False):
+            return
+        self._update_running = True
+        version = update_info['version']
+        progress = QProgressDialog(f'正在下載更新 v{version}…', None, 0, 100, self)
+        progress.setWindowTitle('台股預測分析系統 — 更新中')
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
-        progress.setMinimumWidth(420)
-        progress.setMinimumHeight(120)
+        progress.setMinimumWidth(460)
         progress.setAutoClose(False)
         progress.setAutoReset(False)
         progress.setCancelButton(None)
         progress.setValue(0)
         progress.show()
-        QApplication.processEvents()
+        self._update_progress = progress
 
         def on_progress(downloaded, total):
             if total > 0:
-                pct = int(downloaded / total * 100)
-                mb_done  = downloaded / 1024 / 1024
-                mb_total = total / 1024 / 1024
+                pct = min(100, int(downloaded / total * 100))
                 progress.setLabelText(
-                    f"正在下載更新 v{version}...\n"
-                    f"{mb_done:.1f} MB / {mb_total:.1f} MB  ({pct}%)"
+                    f'正在下載更新 v{version}…\n'
+                    f'{downloaded / 1024 / 1024:.1f} MB / {total / 1024 / 1024:.1f} MB  ({pct}%)'
                 )
-                progress.setValue(pct)
-                QApplication.processEvents()
+                progress.setValue(min(90, int(pct * .9)))
 
-        is_patch = update_info.get("is_patch", False)
-        if is_patch:
-            progress.setLabelText(f"正在下載差量更新 v{version}...")
+        def on_status(message):
+            progress.setLabelText(f'更新 v{version}\n{message}')
 
-        success = download_and_apply(
-            update_info["download_url"],
-            update_info["version"],
-            progress_callback=on_progress,
-            full_url=update_info.get("full_url"),
-            is_patch=is_patch,
-        )
+        def finished(success, error):
+            self._update_running = False
+            if success:
+                progress.setValue(100)
+                progress.setLabelText('更新包已驗證，正在重新啟動…')
+                # The helper waits for this process. Do not require an unattended
+                # confirmation dialog before handing over the installation.
+                from logger.app_logger import shutdown_logging
+                shutdown_logging()
+                QTimer.singleShot(500, lambda: os._exit(0))
+            else:
+                progress.close()
+                QMessageBox.warning(
+                    self, '更新失敗',
+                    f'{error or "下載或解壓更新包時發生錯誤"}\n\n'
+                    '目前程式仍可使用。下載中斷時會保留進度，可再次檢查更新重試。\n'
+                    '詳細紀錄位於 %LOCALAPPDATA%\\台股預測分析系統\\logs\\。'
+                )
+                self.statusBar().showMessage('更新失敗，請依錯誤原因重試', 5000)
 
-        progress.close()
-
-        if success:
-            QMessageBox.information(
-                self, "更新完成",
-                "更新已下載完成，程式將自動重新啟動。\n"
-                "您的所有資料都已安全保留。"
-            )
-            # 強制終止程式，讓更新腳本接手重啟
-            import os as _os
-            _os._exit(0)
-        else:
-            QMessageBox.warning(
-                self, "更新失敗",
-                "下載或安裝更新時發生錯誤。\n"
-                "請稍後再試，或手動下載新版本。"
-            )
-            self.statusBar().showMessage("更新失敗", 5000)
+        self._update_job = UpdateWorker(update_info)
+        self._update_job.signals.progress.connect(on_progress)
+        self._update_job.signals.status.connect(on_status)
+        self._update_job.signals.finished.connect(finished)
+        QThreadPool.globalInstance().start(self._update_job)
 
     def closeEvent(self, event):
         """視窗關閉時等待執行緒池完成"""

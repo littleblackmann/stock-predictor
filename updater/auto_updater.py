@@ -6,6 +6,7 @@
 所有使用者設定、模型、記錄完全不受影響。
 """
 import json
+import hashlib
 import os
 import re
 import ssl
@@ -63,6 +64,11 @@ VERSION_FILE = os.path.join(APP_ROOT, "version.json")
 
 # 更新設定檔（存在 AppData，記住上次跳過的版本）
 UPDATE_PREFS = os.path.join(DATA_ROOT, "update_prefs.json")
+_last_update_error = ""
+
+
+def get_last_update_error():
+    return _last_update_error
 
 
 def get_current_version() -> str:
@@ -164,6 +170,7 @@ def check_for_update(*, manual: bool = False) -> dict | None:
     # 找到 ZIP 下載連結（優先 patch，fallback full）
     patch_url = None
     full_url = None
+    selected_assets = {}
     assets = data.get("assets", [])
     if not isinstance(assets, list):
         return failed("更新來源未提供有效下載清單，請稍後再試")
@@ -177,6 +184,7 @@ def check_for_update(*, manual: bool = False) -> dict | None:
             patch_url = asset.get("browser_download_url")
         elif name.endswith(".zip") and not name.endswith("_patch.zip"):
             full_url = asset.get("browser_download_url")
+        selected_assets[asset.get("browser_download_url")] = asset
 
     download_url = patch_url or full_url
 
@@ -200,13 +208,16 @@ def check_for_update(*, manual: bool = False) -> dict | None:
         "full_url":      full_url,
         "is_patch":      is_patch,
         "release_notes": data.get("body", ""),
+        "size": selected_assets.get(download_url, {}).get("size", 0),
+        "digest": selected_assets.get(download_url, {}).get("digest"),
     }
 
 
 def download_and_apply(download_url: str, new_version: str,
                        progress_callback=None,
                        full_url: str = None,
-                       is_patch: bool = False) -> bool:
+                       is_patch: bool = False, *, status_callback=None,
+                       expected_size=0, expected_digest=None) -> bool:
     """
     下載 ZIP 並覆蓋程式目錄（使用者資料不受影響）。
     支援差量更新（patch）和完整更新（full）。
@@ -222,40 +233,53 @@ def download_and_apply(download_url: str, new_version: str,
         True: 更新成功，需要重啟
         False: 更新失敗
     """
+    global _last_update_error
+    _last_update_error = ""
+    stage = "準備更新"
+    def status(message):
+        nonlocal stage
+        stage = message
+        logger.info(message)
+        if status_callback:
+            status_callback(message)
+
     from urllib.parse import urlparse
     parsed = urlparse(download_url)
     if parsed.scheme != 'https' or parsed.hostname != 'github.com':
+        _last_update_error = '更新網址不符合 GitHub HTTPS 下載來源'
         return False
-    if not new_version or any(not part.isdigit() for part in new_version.split('.')):
+    if not re.fullmatch(r'\d+\.\d+\.\d+', new_version or ''):
+        _last_update_error = '更新版本號無效'
         return False
     tmp_dir = tempfile.mkdtemp(prefix="stock_update_")
-    zip_path = os.path.join(tmp_dir, "update.zip")
+    cache_id = hashlib.sha256(download_url.encode()).hexdigest()[:16]
+    zip_path = os.path.join(DATA_ROOT, 'update_cache', f'{new_version}-{cache_id}.zip')
 
     try:
         # ── 下載 ──
         logger.info(f"下載更新：{download_url}")
-        req = Request(download_url, headers={
-            "User-Agent": "StockPredictor-Updater/1.0",
-        })
-        with _urlopen_safe(req, timeout=120) as resp:
-            total = int(resp.headers.get("Content-Length", 0))
-            downloaded = 0
-            with open(zip_path, "wb") as f:
-                while True:
-                    chunk = resp.read(1024 * 256)  # 256 KB chunks
-                    if not chunk:
-                        break
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if progress_callback:
-                        progress_callback(downloaded, total)
-
-        logger.info(f"下載完成：{downloaded} bytes")
+        from updater.download import download_asset
+        digest = None
+        if expected_digest:
+            if not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', expected_digest):
+                raise ValueError('更新包雜湊資訊無效')
+            digest = expected_digest.split(':', 1)[1]
+        status('正在下載更新…')
+        download_asset(download_url, zip_path, _urlopen_safe,
+                       expected_size=expected_size, expected_sha256=digest,
+                       progress=progress_callback, status=status)
 
         # ── 解壓 ──
         extract_dir = os.path.join(tmp_dir, "extracted")
+        status('正在驗證 ZIP 與檢查磁碟空間…')
         with zipfile.ZipFile(zip_path, "r") as zf:
             _validate_archive(zf, extract_dir)
+            unpacked = sum(item.file_size for item in zf.infolist())
+            if shutil.disk_usage(tmp_dir).free < unpacked + 100 * 1024 * 1024:
+                raise OSError('暫存磁碟空間不足，請至少空出解壓後大小再重試')
+            if shutil.disk_usage(APP_ROOT).free < unpacked + 100 * 1024 * 1024:
+                raise OSError('程式所在磁碟空間不足，請清出空間後重試')
+            status('下載完成，正在解壓更新包…')
             zf.extractall(extract_dir)
 
         # 找到實際的程式根目錄（可能在子資料夾裡）
@@ -326,7 +350,7 @@ REM 暫存更新包保留供故障排查，由系統暫存清理處理
 """)
 
         # ── 啟動更新腳本並退出 ──
-        logger.info("啟動更新腳本...")
+        status('已驗證更新包，正在準備重新啟動…')
         subprocess.Popen(
             ["cmd", "/c", bat_path],
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -334,7 +358,8 @@ REM 暫存更新包保留供故障排查，由系統暫存清理處理
         return True
 
     except Exception as e:
-        logger.error(f"更新失敗：{e}")
+        _last_update_error = f'{stage}\n{e}'
+        logger.error(f"更新失敗：{_last_update_error}", exc_info=True)
         # 清理暫存
         try:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -349,6 +374,7 @@ REM 暫存更新包保留供故障排查，由系統暫存清理處理
                 progress_callback=progress_callback,
                 full_url=None,
                 is_patch=False,
+                status_callback=status_callback,
             )
 
         return False

@@ -54,7 +54,7 @@ def check_env():
         print("[FAIL] 請先安裝 PyInstaller：pip install pyinstaller")
         return False
 
-    for pkg in ['PySide6', 'tensorflow', 'lightgbm']:
+    for pkg in ['PySide6', 'lightgbm']:
         try:
             __import__(pkg)
             print(f"[OK] {pkg}")

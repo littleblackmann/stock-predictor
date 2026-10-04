@@ -437,6 +437,12 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {"version": "v1.7.2", "date": "2026-10-05", "changes": [
+                "縮小完整更新包，移除正式預測流程未使用的 TensorFlow",
+                "下載中斷自動重試，保留進度並支援續傳",
+                "下載、驗證、解壓改為背景執行，失敗顯示具體原因",
+                "檢查更新包大小、SHA-256 與解壓磁碟空間",
+            ]},
             {"version": "v1.7.1", "date": "2026-10-04", "changes": [
                 "手動檢查可更新已跳過的版本；關閉提示只會稍後提醒。",
                 "無法取得版本資訊時顯示檢查失敗，不再誤報已是最新版。",

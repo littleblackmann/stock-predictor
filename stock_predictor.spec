@@ -33,13 +33,7 @@ hidden_imports = [
     'PySide6.QtWebEngineCore',
     'PySide6.QtWebChannel',
     'PySide6.QtPrintSupport',
-    # TensorFlow / Keras / LiteRT
-    'tensorflow',
-    'tensorflow.python',
-    'tensorflow.python.keras',
-    'keras',
-    'litert',
-    'litert.python',
+    # Production 1/3/5-session models use LightGBM, not legacy TensorFlow.
     # LightGBM
     'lightgbm',
     # scikit-learn
@@ -84,6 +78,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        'tensorflow', 'keras', 'litert', 'tensorboard',
         'tkinter',        # 不需要
         'IPython',        # 不需要
         'jupyter',
