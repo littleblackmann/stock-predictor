@@ -7,7 +7,7 @@
   - 圖表：TradingView Lightweight Charts（via QWebEngineView）
   - 資料：yfinance（歷史 2,500 天 OHLCV）+ TWSE API（籌碼面）+ Brave Search（新聞）
   - 特徵：36 維（技術面 + 籌碼面 + 美股隔夜 + 市場行情）
-  - 模型：Transformer（3 層 Encoder，300 天窗口）時序萃取 + LightGBM Ensemble 分類
+  - 模型：LightGBM 獨立 1／3／5 交易日模型與時序驗證
   - AI：OpenRouter（多模型可選）新聞情緒分析 + 3 日走勢推估
   - 解析：SHAP 可解釋性分析
   - 並發：QThreadPool 背景執行緒
@@ -16,6 +16,8 @@
 import sys
 import os
 from pathlib import Path
+from resource_budget import configure_numeric_threads
+configure_numeric_threads()
 
 # ── 打包環境修正：curl_cffi 在 PyInstaller 中可讀 DB 但無法發 HTTPS 請求 ──
 # yfinance 1.2.0 硬依賴 curl_cffi（8 個檔案無 try/except），不能直接封鎖
@@ -96,13 +98,6 @@ class AppLoader(QThread):
             self.sig.step.emit("載入股票資料庫...")
             from data.tw_stock_list import TW_STOCK_LIST   # noqa: F401
             from data.stock_fetcher import get_stock_dict  # noqa: F401
-
-            self.sig.step.emit("更新台股交易日曆...")
-            from data.holiday_checker import get_calendar
-            get_calendar().refresh()
-
-            self.sig.step.emit("載入 AI 模型引擎...")
-            import workers.prediction_worker               # noqa: F401（觸發 TF/Keras import）
 
             self.sig.step.emit("初始化圖表模組...")
             from ui.chart_widget import ChartWidget        # noqa: F401

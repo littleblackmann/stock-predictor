@@ -144,10 +144,10 @@ class RecordTests(unittest.TestCase):
         PredictionLogger.append(self.result())
         hist=pd.DataFrame({'Close':[100.,103.]},index=pd.to_datetime(['2026-04-07','2026-04-08']))
         ticker=MagicMock();ticker.history.return_value=hist
-        with patch('data.prediction_logger.yf.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,8,10,tzinfo=TAIPEI)):
+        with patch('yfinance.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,8,10,tzinfo=TAIPEI)):
             self.assertEqual(PredictionLogger.backfill_actuals(),0)
         hist.iloc[-1,0]=99
-        with patch('data.prediction_logger.yf.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,8,16,tzinfo=TAIPEI)):
+        with patch('yfinance.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,8,16,tzinfo=TAIPEI)):
             self.assertEqual(PredictionLogger.backfill_actuals(),1)
         self.assertEqual(PredictionLogger.load_all()[0]['correct'],'False')
 
@@ -155,7 +155,7 @@ class RecordTests(unittest.TestCase):
         PredictionLogger.append(self.result())
         hist=pd.DataFrame({'Close':[100.,103.]},index=pd.to_datetime(['2026-04-07','2026-04-09']))
         ticker=MagicMock();ticker.history.return_value=hist
-        with patch('data.prediction_logger.yf.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,10,16,tzinfo=TAIPEI)):
+        with patch('yfinance.Ticker',return_value=ticker),patch('data.prediction_logger.taipei_now',return_value=datetime(2026,4,10,16,tzinfo=TAIPEI)):
             self.assertEqual(PredictionLogger.backfill_actuals(),0)
 
 

@@ -49,7 +49,7 @@ def _fit(X, y, fit, calibration):
     model = lgb.LGBMClassifier(
         n_estimators=100, learning_rate=.035, num_leaves=7, max_depth=3,
         min_child_samples=25, reg_lambda=3, reg_alpha=.2,
-        is_unbalance=False, n_jobs=2, random_state=42, verbosity=-1,
+        is_unbalance=False, n_jobs=1, random_state=42, verbosity=-1,
     )
     model.fit(X[fit][:, active], y[fit])
     calibrator = None

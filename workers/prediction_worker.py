@@ -3,14 +3,11 @@
 繼承 QRunnable，在獨立執行緒中執行耗時的資料下載與模型推論
 透過 Qt Signals 安全地將結果回傳給主介面
 """
-import numpy as np
+from __future__ import annotations
+from resource_budget import background_resources
 import traceback
 from PySide6.QtCore import QRunnable, QObject, Signal, Slot
 
-from data.yfinance_adapter import YFinanceAdapter
-from data.news_sentiment import NewsSentimentAnalyzer
-from data.chip_fetcher import ChipFetcher
-from features.feature_engineer import FeatureEngineer
 from logger.app_logger import get_logger
 
 logger = get_logger(__name__)
@@ -74,7 +71,8 @@ class PredictionWorker(QRunnable):
         """背景執行緒的主要執行邏輯"""
 
         try:
-            result = run_prediction(self.symbol, self.retrain, self._emit_progress)
+            with background_resources():
+                result = run_prediction(self.symbol, self.retrain, self._emit_progress)
             self.signals.prediction_finished.emit(result)
         except Exception as e:
             logger.error("預測失敗：%s", e, exc_info=True)
@@ -88,6 +86,7 @@ class PredictionWorker(QRunnable):
         對整個資料集批次萃取 Transformer 特徵
         用於建構 LightGBM 的訓練特徵矩陣
         """
+        import numpy as np
         from models.transformer_extractor import SEQUENCE_LEN, OUTPUT_DIM
 
         if not seq_extractor.is_trained:
@@ -130,6 +129,7 @@ class PredictionWorker(QRunnable):
             {"^GSPC": DataFrame, "^SOX": DataFrame, "^VIX": DataFrame} 或 None
         """
         import yfinance as yf
+        from data.yfinance_adapter import YFinanceAdapter
 
         us_symbols = {
             "^GSPC": "S&P 500",
@@ -158,12 +158,16 @@ class PredictionWorker(QRunnable):
 
 
 def run_prediction(symbol, force=False, progress=None, include_news=True):
+    from data.yfinance_adapter import YFinanceAdapter
+    from features.feature_engineer import FeatureEngineer
     from data.market_time import completed_history, taipei_now, target_session
     from data.holiday_checker import get_calendar
     from data.data_paths import MODEL_DIR
     from models.short_term import cached_forecast
 
     emit = progress or (lambda *args: None)
+    calendar = get_calendar()
+    calendar.refresh()
     adapter = YFinanceAdapter()
     symbol = adapter.normalize_symbol(symbol)
     emit(5, "下載歷史行情，確認完整交易日...")
@@ -201,6 +205,7 @@ def run_prediction(symbol, force=False, progress=None, include_news=True):
     sentiment = {'available': False, 'reason': '新聞分析未啟用'}
     if include_news:
         emit(88, "整理新聞分析...")
+        from data.news_sentiment import NewsSentimentAnalyzer
         sentiment = NewsSentimentAnalyzer().analyze(symbol)
     latest = float(raw.Close.iloc[-1]); previous = float(raw.Close.iloc[-2])
     result = {'symbol': symbol, 'prediction': horizons[0], 'horizons': horizons,

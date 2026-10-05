@@ -29,7 +29,9 @@ class _BackfillWorker(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
-        count = PredictionLogger.backfill_actuals()
+        from resource_budget import background_resources
+        with background_resources():
+            count = PredictionLogger.backfill_actuals()
         self.signals.finished.emit(count)
 
 
@@ -322,7 +324,16 @@ class PredictionLogDialog(QDialog):
 
         worker = _BackfillWorker()
         worker.signals.finished.connect(self._on_backfill_done)
-        QThreadPool.globalInstance().start(worker)
+        # Share the app's serial queue, including manual backfill requests.
+        parent = self.parent()
+        if parent is not None and hasattr(parent, '_pool'):
+            pool = parent._pool
+        else:
+            if not hasattr(self, '_pool'):
+                self._pool = QThreadPool(self)
+                self._pool.setMaxThreadCount(1)
+            pool = self._pool
+        pool.start(worker)
 
     def _on_backfill_done(self, count: int):
         self.btn_backfill.setEnabled(True)

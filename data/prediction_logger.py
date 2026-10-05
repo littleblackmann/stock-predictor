@@ -6,7 +6,6 @@ import uuid
 from collections import defaultdict
 from datetime import date, timedelta
 
-import yfinance as yf
 from data.data_paths import PREDICTION_LOG as LOG_PATH, COOLDOWN_PATH
 from data.market_time import completed_history, taipei_now
 from data.record_store import FIELDS, locked, read_rows, write_rows
@@ -55,6 +54,9 @@ class PredictionLogger:
     def backfill_actuals():
         snapshot = PredictionLogger.load_all()
         pending = [r for r in snapshot if r['model_version'] != 'legacy' and r['evaluation_status'] != 'final']
+        if not pending:
+            return 0
+        import yfinance as yf
         by_symbol = defaultdict(list)
         for row in pending:
             by_symbol[row['symbol']].append(row)

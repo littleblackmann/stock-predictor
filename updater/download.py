@@ -10,7 +10,10 @@ from urllib.request import Request
 
 
 def download_asset(url, destination, opener, *, expected_size=0, expected_sha256=None,
-                   progress=None, status=None, attempts=5, delay=time.sleep):
+                   progress=None, status=None, attempts=5, delay=time.sleep,
+                   bytes_per_second=0):
+    from resource_budget import RateLimiter
+    limiter = RateLimiter(bytes_per_second)
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     metadata = destination.with_suffix('.json')
@@ -36,7 +39,7 @@ def download_asset(url, destination, opener, *, expected_size=0, expected_sha256
         if total and offset > total:
             destination.write_bytes(b'')
             offset = 0
-        headers = {'User-Agent': 'StockPredictor-Updater/1.7.2', 'Accept-Encoding': 'identity'}
+        headers = {'User-Agent': 'StockPredictor-Updater/1.7.3', 'Accept-Encoding': 'identity'}
         if offset:
             headers['Range'] = f'bytes={offset}-'
             if etag:
@@ -76,6 +79,7 @@ def download_asset(url, destination, opener, *, expected_size=0, expected_sha256
                         if not chunk:
                             break
                         stream.write(chunk)
+                        limiter.consume(len(chunk))
                         offset += len(chunk)
                         if total and offset > total:
                             raise ValueError('下載內容超過更新包大小')

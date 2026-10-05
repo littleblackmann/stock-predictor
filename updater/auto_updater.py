@@ -39,7 +39,7 @@ def _urlopen_safe(req, timeout=30):
     return urlopen(req, timeout=timeout, context=_get_ssl_context())
 
 
-def _validate_archive(zf, extract_dir):
+def _validate_archive(zf, extract_dir, *, check_crc=True):
     from pathlib import PurePosixPath
     root = Path(extract_dir).resolve()
     for item in zf.infolist():
@@ -50,8 +50,26 @@ def _validate_archive(zf, extract_dir):
             raise ValueError('更新包包含不安全路徑')
         if (item.external_attr >> 16) & 0o170000 == 0o120000:
             raise ValueError('更新包包含不支援的連結')
-    if zf.testzip() is not None:
+    if check_crc and zf.testzip() is not None:
         raise ValueError('更新包損毀，請重新下載')
+
+
+def _extract_archive(zf, extract_dir, *, bytes_per_second=16 * 1024 * 1024):
+    """Validate paths first; ZipExtFile checks each CRC while reading to EOF."""
+    from resource_budget import RateLimiter
+    _validate_archive(zf, extract_dir, check_crc=False)
+    limiter = RateLimiter(bytes_per_second)
+    root = Path(extract_dir)
+    for item in zf.infolist():
+        target = root / item.filename.replace('\\', '/')
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(item) as source, target.open('wb') as destination:
+            while chunk := source.read(64 * 1024):
+                destination.write(chunk)
+                limiter.consume(len(chunk))
 
 
 # ── 設定 ──────────────────────────────────────────────────────────
@@ -267,20 +285,21 @@ def download_and_apply(download_url: str, new_version: str,
         status('正在下載更新…')
         download_asset(download_url, zip_path, _urlopen_safe,
                        expected_size=expected_size, expected_sha256=digest,
-                       progress=progress_callback, status=status)
+                       progress=progress_callback, status=status,
+                       bytes_per_second=8 * 1024 * 1024)
 
         # ── 解壓 ──
         extract_dir = os.path.join(tmp_dir, "extracted")
         status('正在驗證 ZIP 與檢查磁碟空間…')
         with zipfile.ZipFile(zip_path, "r") as zf:
-            _validate_archive(zf, extract_dir)
+            _validate_archive(zf, extract_dir, check_crc=False)
             unpacked = sum(item.file_size for item in zf.infolist())
             if shutil.disk_usage(tmp_dir).free < unpacked + 100 * 1024 * 1024:
                 raise OSError('暫存磁碟空間不足，請至少空出解壓後大小再重試')
             if shutil.disk_usage(APP_ROOT).free < unpacked + 100 * 1024 * 1024:
                 raise OSError('程式所在磁碟空間不足，請清出空間後重試')
-            status('下載完成，正在解壓更新包…')
-            zf.extractall(extract_dir)
+            status('下載完成，正在分批解壓並檢查完整性，請稍候…')
+            _extract_archive(zf, extract_dir)
 
         # 找到實際的程式根目錄（可能在子資料夾裡）
         contents = os.listdir(extract_dir)
@@ -342,7 +361,7 @@ if errorlevel 1 (
 )
 
 echo Update complete, restarting...
-start "" "{exe_path}"
+start "" /NORMAL "{exe_path}"
 
 :CLEANUP
 timeout /t 3 /nobreak >nul
@@ -353,7 +372,7 @@ REM 暫存更新包保留供故障排查，由系統暫存清理處理
         status('已驗證更新包，正在準備重新啟動…')
         subprocess.Popen(
             ["cmd", "/c", bat_path],
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS,
         )
         return True
 

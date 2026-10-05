@@ -20,7 +20,6 @@ from ui.chart_widget import ChartWidget
 from ui.prediction_panel import PredictionPanel
 from ui.watchlist_drawer import WatchlistDrawer
 from ui.smart_line_edit import SmartLineEdit
-from ui.prediction_log_dialog import PredictionLogDialog
 from ui.prediction_progress_dialog import PredictionProgressDialog
 from workers.prediction_worker import PredictionWorker
 from logger.app_logger import get_logger
@@ -58,6 +57,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self._pool = QThreadPool(self)
+        self._pool.setMaxThreadCount(1)
+        self._busy = False
         self._last_result = None
         self._current_symbol = ""
         self._result_cache: dict[str, dict] = {}   # symbol → 該次預測完整結果
@@ -75,9 +77,9 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         logger.info("MainWindow 初始化完成")
 
-        # 若快取過期，啟動後 3 秒在背景更新（不阻塞 UI）
+        # 若快取過期，啟動後 25 秒在背景更新（不阻塞 UI）
         if needs_refresh():
-            QTimer.singleShot(3000, self._refresh_stock_list_bg)
+            QTimer.singleShot(25000, self._refresh_stock_list_bg)
 
         # 首次使用 → 先顯示引導視窗，再彈出設定
         if not load_config().get("welcome_shown", False):
@@ -279,11 +281,11 @@ class MainWindow(QMainWindow):
         # 啟動時顯示模型訓練狀態
         self._update_model_status()
 
-        # 啟動後 2 秒在背景回填預測記錄
-        QTimer.singleShot(2000, self._backfill_in_background)
+        # 啟動後 20 秒在背景回填預測記錄
+        QTimer.singleShot(20000, self._backfill_in_background)
 
-        # 啟動後 5 秒掃描自選股技術訊號（等網路快取先更新完）
-        QTimer.singleShot(5000, self._scan_signals_in_background)
+        # 啟動後 30 秒掃描自選股技術訊號（其他工作忙碌時延後）
+        QTimer.singleShot(30000, self._scan_signals_in_background)
 
     def _setup_tray(self):
         """初始化系統匣圖示與選單"""
@@ -417,6 +419,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_log_clicked(self):
+        from ui.prediction_log_dialog import PredictionLogDialog
         dlg = PredictionLogDialog(self)
         dlg.exec()
 
@@ -481,7 +484,7 @@ class MainWindow(QMainWindow):
         worker.signals.prediction_finished.connect(self._on_prediction_finished)
         worker.signals.error_occurred.connect(self._on_error)
 
-        QThreadPool.globalInstance().start(worker)
+        self._pool.start(worker)
         logger.info(f"預測任務已派送：{symbol}，retrain={retrain}")
 
         # 非阻塞顯示（用 show 而非 exec，讓事件迴圈繼續跑）
@@ -577,6 +580,7 @@ class MainWindow(QMainWindow):
 
     def _set_busy(self, busy: bool):
         """切換按鈕的可用狀態，含脈衝光暈動畫"""
+        self._busy = busy
         self.btn_predict.setEnabled(not busy)
         if busy:
             self.btn_predict.setText("⏳ 預測中...")
@@ -639,8 +643,16 @@ class MainWindow(QMainWindow):
         self.status_label.setText(message)
         self.status_label.setStyleSheet(f"color: {color}; font-size: 11px;")
 
+    def _defer_maintenance(self, callback):
+        if self._busy or getattr(self, '_update_running', False) or self._pool.activeThreadCount():
+            QTimer.singleShot(10000, callback)
+            return True
+        return False
+
     def _refresh_stock_list_bg(self):
         """背景更新股票清單快取（不阻塞 UI，下次啟動生效）"""
+        if self._defer_maintenance(self._refresh_stock_list_bg):
+            return
         from PySide6.QtCore import QRunnable, QObject, Signal
 
         class _W(QRunnable):
@@ -648,9 +660,13 @@ class MainWindow(QMainWindow):
                 super().__init__()
                 self.setAutoDelete(True)
             def run(self):
-                refresh_cache()
+                from resource_budget import background_resources
+                from data.holiday_checker import get_calendar
+                with background_resources():
+                    get_calendar().refresh()
+                    refresh_cache()
 
-        QThreadPool.globalInstance().start(_W())
+        self._pool.start(_W())
         logger.info("股票清單背景更新已啟動")
 
     def _check_auto_retrain(self):
@@ -666,7 +682,7 @@ class MainWindow(QMainWindow):
         worker = AutoRetrainWorker(candidates)
         worker.signals.symbol_done.connect(self._on_auto_retrain_symbol_done)
         worker.signals.all_done.connect(self._on_auto_retrain_all_done)
-        QThreadPool.globalInstance().start(worker)
+        self._pool.start(worker)
 
     def _on_auto_retrain_symbol_done(self, symbol: str, success: bool):
         if success:
@@ -682,17 +698,21 @@ class MainWindow(QMainWindow):
 
     def _scan_signals_in_background(self):
         """啟動後掃描自選股的技術訊號（MACD 金叉/死叉、RSI 超買/超賣）"""
+        if self._defer_maintenance(self._scan_signals_in_background):
+            return
         symbols = self.watchlist_drawer.symbols
         if not symbols:
             return
         from workers.signal_scan_worker import SignalScanWorker
         worker = SignalScanWorker(symbols)
         worker.signals.finished.connect(self.watchlist_drawer.update_signals)
-        QThreadPool.globalInstance().start(worker)
+        self._pool.start(worker)
         logger.info(f"技術訊號掃描已啟動：{symbols}")
 
     def _backfill_in_background(self):
         """啟動後在背景執行緒回填歷史預測記錄的 actual 欄位"""
+        if self._defer_maintenance(self._backfill_in_background):
+            return
         from PySide6.QtCore import QRunnable, QObject, Signal
 
         class _Signals(QObject):
@@ -704,7 +724,9 @@ class MainWindow(QMainWindow):
                 self.signals = _Signals()
                 self.setAutoDelete(True)
             def run(self):
-                filled = PredictionLogger.backfill_actuals()
+                from resource_budget import background_resources
+                with background_resources():
+                    filled = PredictionLogger.backfill_actuals()
                 stats  = PredictionLogger.get_stats()
                 self.signals.done.emit(filled, stats["correct"], stats["total"])
 
@@ -719,7 +741,7 @@ class MainWindow(QMainWindow):
 
         worker = _Worker()
         worker.signals.done.connect(_on_done)
-        QThreadPool.globalInstance().start(worker)
+        self._pool.start(worker)
 
     def _update_model_status(self):
         self.label_timestamp.setText("完整收盤資料 · 1／3／5 交易日")
@@ -759,9 +781,9 @@ class MainWindow(QMainWindow):
             def run(self):
                 from updater.auto_updater import check_for_update
                 self.signals.done.emit(check_for_update())
-        self._update_job = _Worker()
-        self._update_job.signals.done.connect(self._update_ready)
-        QThreadPool.globalInstance().start(self._update_job)
+        self._update_check_job = _Worker()
+        self._update_check_job.signals.done.connect(self._update_ready)
+        self._pool.start(self._update_check_job)
 
     def _update_ready(self, info):
         if info:
@@ -855,11 +877,11 @@ class MainWindow(QMainWindow):
         self._update_job.signals.progress.connect(on_progress)
         self._update_job.signals.status.connect(on_status)
         self._update_job.signals.finished.connect(finished)
-        QThreadPool.globalInstance().start(self._update_job)
+        self._pool.start(self._update_job)
 
     def closeEvent(self, event):
         """視窗關閉時等待執行緒池完成"""
-        QThreadPool.globalInstance().waitForDone(3000)
+        self._pool.waitForDone(3000)
         from logger.app_logger import shutdown_logging
         shutdown_logging()
         event.accept()

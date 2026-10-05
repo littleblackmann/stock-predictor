@@ -15,11 +15,17 @@ class UpdateWorker(QRunnable):
         self.signals = UpdateSignals()
 
     def run(self):
+        from resource_budget import background_resources
+        with background_resources():
+            self._apply()
+
+    def _apply(self):
         from updater.auto_updater import download_and_apply, get_last_update_error
+        from resource_budget import ProgressThrottle
         try:
             success = download_and_apply(
                 self.info['download_url'], self.info['version'],
-                progress_callback=self.signals.progress.emit,
+                progress_callback=ProgressThrottle(self.signals.progress.emit),
                 full_url=self.info.get('full_url'), is_patch=self.info.get('is_patch', False),
                 status_callback=self.signals.status.emit,
                 expected_size=self.info.get('size', 0), expected_digest=self.info.get('digest'),

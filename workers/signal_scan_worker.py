@@ -3,10 +3,9 @@
 啟動時在背景執行，偵測 MACD 黃金/死亡交叉與 RSI 超買/超賣
 只回報最近 1~2 個交易日剛出現的訊號
 """
-import numpy as np
+from __future__ import annotations
 from PySide6.QtCore import QRunnable, QObject, Signal
 
-from data.yfinance_adapter import YFinanceAdapter
 from logger.app_logger import get_logger
 
 logger = get_logger(__name__)
@@ -36,6 +35,12 @@ class SignalScanWorker(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
+        from resource_budget import background_resources
+        with background_resources():
+            self._scan()
+
+    def _scan(self):
+        from data.yfinance_adapter import YFinanceAdapter
         result: dict[str, list[str]] = {}
         adapter = YFinanceAdapter()
 
@@ -100,6 +105,7 @@ class SignalScanWorker(QRunnable):
 
     @staticmethod
     def _ema(data: np.ndarray, period: int) -> np.ndarray:
+        import numpy as np
         alpha = 2.0 / (period + 1)
         ema = np.empty_like(data)
         ema[0] = data[0]
@@ -109,6 +115,7 @@ class SignalScanWorker(QRunnable):
 
     @staticmethod
     def _rsi(data: np.ndarray, period: int = 14) -> float | None:
+        import numpy as np
         if len(data) < period + 1:
             return None
         deltas   = np.diff(data)

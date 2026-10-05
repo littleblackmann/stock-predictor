@@ -132,7 +132,7 @@ class BackgroundUpdateTests(unittest.TestCase):
         import threading
         import time
         os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-        from PySide6.QtCore import QTimer
+        from PySide6.QtCore import QTimer, QThreadPool
         from PySide6.QtWidgets import QApplication, QWidget, QMessageBox
         from ui.main_window import MainWindow
         from updater import auto_updater as u
@@ -145,6 +145,8 @@ class BackgroundUpdateTests(unittest.TestCase):
                 pass
 
         parent = Parent()
+        parent._pool = QThreadPool(parent)
+        parent._pool.setMaxThreadCount(1)
         threads, ticks = [], []
         timer = QTimer()
         timer.timeout.connect(lambda: ticks.append(1))
