@@ -26,4 +26,14 @@
 - 完整 ZIP 351,002,923 bytes，SHA-256 `eac28978f0df3928572a955ce799adf302d0163ff3f8cc7a8a68110fa870f362`。ZIP 路徑／CRC／版本與 4,964 個 manifest 檔案逐一核對通過，無私人設定／紀錄或 TensorFlow。
 - 隔離 v1.6.2 格式設定／自選股／舊 CSV 保存與備份通過。v1.6.2 原始更新器接收本機完整 ZIP 串流、解壓 4,964 檔案 hash 一致並準備重啟批次，攔截 installer 子程序，不實際覆蓋使用者軟體。此項不是公開網路整包下載，也未操作媽媽電腦。
 - 證據：`tests-v174.txt`、`compiled-updater-v174-report.json`、`embedded-source-v174.json`、`artifact-report-v1.7.4.json`、`legacy-v162-download-v174-report.json`，皆位於 ignored `build/verification/`。
-- 公開發布與網站證據於本輪收尾追加；在實際完成前不視為已發布。真實帳號的付費搜尋、模型是否確實呼叫工具及近期資料品質仍待實際使用確認。
+- 真實帳號的付費搜尋、模型是否確實呼叫工具及近期資料品質仍待實際使用確認。
+
+## GitHub Release 與公開下載核對
+
+- 程式提交 `9239ddabdf924dfb8d450338d37537bf33f32d24` 已推送 `origin/master`，正式 [v1.7.4](https://github.com/littleblackmann/stock-predictor/releases/tag/v1.7.4) 已發布並設為 latest，非 draft／prerelease，target 指向該提交。
+- GitHub asset 大小 351,002,923 bytes、`state=uploaded` 與服務端 SHA-256 均符合本機驗證包；同時提供 SHA256SUMS。
+- v1.5.5／1.6.0／1.6.1／1.6.2／1.7.1／1.7.2／1.7.3 的原始更新器，對匿名公開 latest 實測都選到 v1.7.4 完整 ZIP。
+- 公開 CDN 的 0～1,048,575 與 1,048,576～1,114,111 bytes 範圍均回 HTTP 206，內容與本機相同，確認直接下載及 Range 可用；本輪未重複下載公開整包，不把此探測寫成全包網路驗證。報告 `published-v174-report.json`。
+- 網站變更提交 `7202cf7818c831a73881cea9882e08bfd2b51c38` 已推送 `origin/main`，本機 E 槽 HEAD 與 remote 一致且 clean，包含新版介紹／費用／直接下載／設定截圖。
+- Pages run `38152335096` build／deploy 全部 success，commit 與網站 HEAD 相同；公開 HTML／下載 JS／sitemap 正規化換行後與本機一致，新設定 PNG exact SHA-256 一致，四項 HTTP 200。
+- 公開網站 Edge 再檢查 320／375／520／768／1280／1440px：無橫向溢出、圖片正常、v1.7.4 版本與完整下載連結正確、無 page error，圖片放大及 Escape 通過；證據 `site-v174-public/report.json`、`published-stock-site-v174-audit.json`。正式網址：https://littleblackmann.github.io/projects/stock-predictor.html 。
