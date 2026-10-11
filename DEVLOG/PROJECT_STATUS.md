@@ -5,6 +5,7 @@
 ## v1.7.5 現行行為
 
 - 區分五五波與驗證不足的觀望原因；新增含觀望分析的「機率對照」，明確方向對錯仍獨立評分。恢復舊版待驗證結果回填並備份、標示推定日期；空行情或缺日改用備援，失敗顯示具體狀態供重試。詳見 [修復日誌](./2026-10-12-prediction-record-recovery.md)。
+- [v1.7.5 完整更新包](https://github.com/littleblackmann/stock-predictor/releases/tag/v1.7.5) 已公開為 latest，原始碼／內嵌模組各 91 項測試通過，舊版更新檢查與資料保留已驗證；[網站說明](https://littleblackmann.github.io/projects/stock-predictor.html) 和本機 E 槽內容已同步部署。
 
 - 新聞搜尋預設使用 OpenRouter Perplexity，與既有 Key／AI 模型共用；設定可切換 Brave／RSS、搜尋次數、資料量與 RSS 備援，分析顯示可點開的來源與搜尋時間。有限額與 30 分鐘快取，不更動量化機率。實際驗證及發布狀態見 [Perplexity 接入日誌](./2026-10-11-perplexity-search.md)。
 
