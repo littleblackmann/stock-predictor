@@ -9,6 +9,7 @@ OpenRouter 提供 OpenAI 相容的 API，因此仍沿用 openai 套件，
 import json
 import os
 from data.data_paths import CONFIG_PATH
+from data.web_search import SEARCH_DEFAULTS, search_settings
 
 # OpenRouter API 端點（OpenAI 相容）
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -26,6 +27,7 @@ DEFAULT_CONFIG = {
     "default_symbol": "",
     "brave_api_key": "",
     "welcome_shown": False,
+    **SEARCH_DEFAULTS,
 }
 
 # ── 前 10 大熱門模型 ──────────────────────────────────────────────
@@ -72,6 +74,7 @@ def load_config() -> dict:
                 # 補上缺少的欄位
                 for k, v in DEFAULT_CONFIG.items():
                     data.setdefault(k, v)
+                data.update(search_settings(data))
                 return data
         except Exception:
             pass

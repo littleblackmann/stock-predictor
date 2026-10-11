@@ -279,9 +279,17 @@ class PredictionPanel(QWidget):
 
         self.label_sentiment = QLabel("--")
         self.label_sentiment.setObjectName("labelExplain")
+        self.label_sentiment.setTextFormat(Qt.TextFormat.PlainText)
         self.label_sentiment.setWordWrap(True)
         self.label_sentiment.setAlignment(Qt.AlignmentFlag.AlignTop)
         main_layout.addWidget(self.label_sentiment)
+        self.label_news_sources = QLabel("")
+        self.label_news_sources.setWordWrap(True)
+        self.label_news_sources.setTextFormat(Qt.TextFormat.RichText)
+        self.label_news_sources.setOpenExternalLinks(True)
+        self.label_news_sources.setStyleSheet("color: #8DA6BF; font-size: 12px; padding: 6px 10px;")
+        self.label_news_sources.hide()
+        main_layout.addWidget(self.label_news_sources)
 
         main_layout.addStretch()
 
@@ -379,6 +387,30 @@ class PredictionPanel(QWidget):
 
         # ── 更新 GPT 情緒 ──
         sentiment = result.get("sentiment", {})
+        from data.web_search import PROVIDER_NAMES, safe_url
+        from html import escape
+        provider = PROVIDER_NAMES.get(sentiment.get("source"), "新聞來源")
+        links = []
+        for item in sentiment.get("sources", [])[:15]:
+            if not isinstance(item, dict):
+                continue
+            url = safe_url(item.get("url"))
+            if url:
+                title = escape(str(item.get("title", "新聞來源"))[:250])
+                links.append(f'<a style="color:#8ABEFF" href="{escape(url, quote=True)}">{title}</a>')
+        status = escape(provider)
+        if sentiment.get("cached"):
+            status += " · 重用近期搜尋結果"
+        requests = sentiment.get("search_requests")
+        if type(requests) is int and not sentiment.get("cached"):
+            status += f" · 搜尋 {requests} 次"
+        if sentiment.get("searched_at"):
+            status += " · " + escape(str(sentiment["searched_at"])[:16].replace("T", " "))
+        warning = sentiment.get("search_warning")
+        if warning:
+            status += "<br>" + escape(str(warning))
+        self.label_news_sources.setText(status + ("<br>" + "<br>".join(links) if links else ""))
+        self.label_news_sources.setVisible(bool(links or warning))
         if sentiment.get("available"):
             score  = sentiment.get("score", 0.0)
             reason = sentiment.get("reason", "")
@@ -401,7 +433,7 @@ class PredictionPanel(QWidget):
 
             self.label_sentiment.setText(
                 f"{emoji} 情緒：{label}（{score:+.2f}）\n"
-                f"分析 {count} 則新聞\n"
+                f"參考 {count} 筆{'搜尋來源' if sentiment.get('source') == 'perplexity' else '新聞'}\n"
                 "新聞補充說明，未修改模型機率\n"
                 f"{reason}"
             )
@@ -442,6 +474,8 @@ class PredictionPanel(QWidget):
         self.label_metrics.setText("尚未訓練")
         self.label_explain.setText("--")
         self.label_sentiment.setText("尚未分析")
+        self.label_news_sources.clear()
+        self.label_news_sources.hide()
         self.confidence_bar.setVisible(False)
         self.shap_bar.set_data([])
 

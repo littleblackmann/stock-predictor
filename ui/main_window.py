@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
         self.btn_settings = QPushButton("⚙")
         self.btn_settings.setObjectName("btnSettings")
         self.btn_settings.setFixedSize(36, 36)
-        self.btn_settings.setToolTip("系統設定（API Key / AI 模型）")
+        self.btn_settings.setToolTip("系統設定（API Key / AI 模型 / 新聞搜尋）")
         layout.addWidget(self.btn_settings)
 
         layout.addStretch(1)

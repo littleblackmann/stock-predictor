@@ -1,6 +1,6 @@
 """
 設定視窗（分頁版）
-- Tab 1：API 設定（OpenRouter / Brave Search / 模型選擇）
+- Tab 1：API 設定（OpenRouter / AI 模型 / 新聞搜尋）
 - Tab 2：使用說明（模型成長、功能介紹、注意事項）
 - 首次啟動時自動彈出（API Key 為空）
 - 可透過控制列 ⚙ 按鈕隨時開啟
@@ -8,7 +8,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QFrame,
-    QWidget, QTabWidget, QScrollArea
+    QWidget, QTabWidget, QScrollArea, QSpinBox, QCheckBox
 )
 from PySide6.QtCore import Qt, QObject, Signal, QRunnable, QThreadPool
 from PySide6.QtGui import QFont
@@ -16,6 +16,7 @@ from PySide6.QtGui import QFont
 from data.config_manager import (
     load_config, save_config, AVAILABLE_MODELS, DEFAULT_MODEL,
 )
+from data.web_search import search_settings
 
 
 class _CatalogSignals(QObject):
@@ -176,6 +177,7 @@ class SettingsDialog(QDialog):
             "至 https://openrouter.ai/keys 申請，一把 Key 即可使用下方所有模型"
         )
         key_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
+        key_hint.setWordWrap(True)
         layout.addWidget(key_hint)
 
         key_row = QHBoxLayout()
@@ -198,13 +200,54 @@ class SettingsDialog(QDialog):
         key_row.addWidget(self.btn_toggle_key)
         layout.addLayout(key_row)
 
-        # Brave Search API Key
+        # 新聞搜尋：沿用 AI 模型，只切換搜尋引擎。
         layout.addWidget(self._make_hline())
-        layout.addWidget(self._make_label("Brave Search API Key（選填）"))
+        layout.addWidget(self._make_label("新聞搜尋來源"))
+        self.combo_search_provider = QComboBox()
+        self.combo_search_provider.addItem("Perplexity 網路搜尋（共用 OpenRouter Key）", "perplexity")
+        self.combo_search_provider.addItem("Brave Search（使用原本的搜尋 Key）", "brave")
+        self.combo_search_provider.addItem("Google News RSS（不加收搜尋費）", "google_rss")
+        self.combo_search_provider.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_search_provider.setMinimumContentsLength(18)
+        self.combo_search_provider.setFixedHeight(36)
+        layout.addWidget(self.combo_search_provider)
+
+        self.search_hint = QLabel()
+        self.search_hint.setWordWrap(True)
+        self.search_hint.setStyleSheet("color: #7A9ABE; font-size: 12px;")
+        layout.addWidget(self.search_hint)
+
+        self.search_options = QWidget()
+        search_row = QHBoxLayout(self.search_options)
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.addWidget(QLabel("每次分析最多搜尋"))
+        self.spin_search_uses = QSpinBox()
+        self.spin_search_uses.setRange(1, 3)
+        self.spin_search_uses.setSuffix(" 次")
+        self.spin_search_uses.setValue(1)
+        search_row.addWidget(self.spin_search_uses)
+        search_row.addSpacing(12)
+        search_row.addWidget(QLabel("搜尋資料量"))
+        self.combo_search_context = QComboBox()
+        for label, value in [("精簡", "low"), ("標準", "medium"), ("詳細", "high")]:
+            self.combo_search_context.addItem(label, value)
+        self.combo_search_context.setCurrentIndex(1)
+        search_row.addWidget(self.combo_search_context)
+        search_row.addStretch()
+        layout.addWidget(self.search_options)
+        self.check_rss_fallback = QCheckBox("搜尋失敗時使用 RSS 備援（AI 分析仍計費）")
+        self.check_rss_fallback.setChecked(True)
+        layout.addWidget(self.check_rss_fallback)
+
+        self.brave_settings = QWidget()
+        brave_layout = QVBoxLayout(self.brave_settings)
+        brave_layout.setContentsMargins(0, 0, 0, 0)
+        brave_layout.addWidget(self._make_label("Brave Search API Key"))
 
         brave_hint = QLabel("啟用後可取得新聞摘要與產業資訊，並不保證提高預測準確率")
         brave_hint.setStyleSheet("color: #5A7A9A; font-size: 11px;")
-        layout.addWidget(brave_hint)
+        brave_hint.setWordWrap(True)
+        brave_layout.addWidget(brave_hint)
 
         brave_row = QHBoxLayout()
         self.input_brave_key = QLineEdit()
@@ -224,7 +267,11 @@ class SettingsDialog(QDialog):
             "QPushButton:checked { background: #3A3A3A; }"
         )
         brave_row.addWidget(self.btn_toggle_brave)
-        layout.addLayout(brave_row)
+        brave_layout.addLayout(brave_row)
+        layout.addWidget(self.brave_settings)
+        self.combo_search_provider.currentIndexChanged.connect(self._on_search_changed)
+        self.spin_search_uses.valueChanged.connect(self._on_search_changed)
+        self._on_search_changed()
 
         # 模型選擇
         layout.addWidget(self._make_label("AI 模型"))
@@ -318,6 +365,22 @@ class SettingsDialog(QDialog):
         else:
             self.label_model_hint.setText("請選擇一個模型")
 
+    def _on_search_changed(self, *_):
+        provider = self.combo_search_provider.currentData()
+        self.search_options.setVisible(provider == "perplexity")
+        self.brave_settings.setVisible(provider == "brave")
+        self.check_rss_fallback.setVisible(provider != "google_rss")
+        if provider == "perplexity":
+            uses = self.spin_search_uses.value()
+            self.search_hint.setText(
+                f"使用同一把 OpenRouter Key 與下方所選 AI 模型，不必另申請 Perplexity Key。\n"
+                f"搜尋參考費用 US$0.005／次；本設定每次分析最多 US${uses * .005:.3f} 搜尋費，另計 AI token 費。\n"
+                "每次搜尋最多 5 筆來源；30 分鐘內同股同設定的成功結果可重用。以 OpenRouter 實際計費為準。")
+        elif provider == "brave":
+            self.search_hint.setText("沿用 Brave 搜尋金鑰取得新聞摘要，再交給所選 AI 模型分析；兩個服務各自計費。")
+        else:
+            self.search_hint.setText("使用 Google News RSS 新聞標題；不加收搜尋服務費，AI 分析仍使用 OpenRouter 並依模型計費。")
+
     # ── Tab 2: 使用說明 ───────────────────────────────────────────
 
     def _build_guide_tab(self) -> QWidget:
@@ -343,7 +406,7 @@ class SettingsDialog(QDialog):
             "透過技術面與美股歷史訊號，採用完整收盤資料，\n"
             "分別分析未來 1、3、5 個交易日相對基準日的漲跌。\n\n"
             "若設定 OpenRouter API Key，可額外啟用：\n"
-            "• AI 新聞情緒分析（搭配 Brave Search 效果更佳）\n"
+            "• AI 新聞情緒分析（Perplexity 網路搜尋、Brave 或 RSS 可選）\n"
             "• 新聞作為補充說明，不直接修改模型機率"
         ))
 
@@ -437,6 +500,16 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {"version": "v1.7.4", "date": "2026-10-11", "changes": [
+                "新增 Perplexity 網路搜尋，共用 OpenRouter Key 與已選 AI 模型",
+                "設定可切換 Perplexity、Brave 或 RSS，調整搜尋次數與資料量",
+                "新聞分析顯示可點開來源、搜尋時間與 RSS 備援原因",
+                "搜尋次數限制與 30 分鐘成功結果快取，保留原 Key 與模型選擇",
+            ]},
+            {"version": "v1.7.3", "date": "2026-10-06", "changes": [
+                "分析套件延後載入，背景工作依序處理並限制數值執行緒",
+                "下載與解壓分批限速，減少更新進度通知與資源負擔",
+            ]},
             {"version": "v1.7.2", "date": "2026-10-05", "changes": [
                 "縮小完整更新包，移除正式預測流程未使用的 TensorFlow",
                 "下載中斷自動重試，保留進度並支援續傳",
@@ -677,6 +750,12 @@ class SettingsDialog(QDialog):
         config = load_config()
         self.input_key.setText(config.get("openrouter_api_key", ""))
         self.input_brave_key.setText(config.get("brave_api_key", ""))
+        settings = search_settings(config)
+        self.combo_search_provider.setCurrentIndex(self.combo_search_provider.findData(settings["news_search_provider"]))
+        self.spin_search_uses.setValue(settings["news_search_max_uses"])
+        self.combo_search_context.setCurrentIndex(self.combo_search_context.findData(settings["news_search_context"]))
+        self.check_rss_fallback.setChecked(settings["news_search_rss_fallback"])
+        self._on_search_changed()
         current_model = config.get("openrouter_model", "") or DEFAULT_MODEL
         from data.model_catalog import menu_models
         self._populate_models(menu_models(), current_model)
@@ -692,6 +771,10 @@ class SettingsDialog(QDialog):
             "openrouter_api_key": key,
             "openrouter_model": model,
             "brave_api_key": brave_key,
+            "news_search_provider": self.combo_search_provider.currentData(),
+            "news_search_max_uses": self.spin_search_uses.value(),
+            "news_search_context": self.combo_search_context.currentData(),
+            "news_search_rss_fallback": self.check_rss_fallback.isChecked(),
         })
         self.accept()
 

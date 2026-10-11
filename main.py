@@ -5,7 +5,7 @@
 技術架構：
   - UI：PySide6 + QSS 深色霓虹主題
   - 圖表：TradingView Lightweight Charts（via QWebEngineView）
-  - 資料：yfinance（歷史 2,500 天 OHLCV）+ TWSE API（籌碼面）+ Brave Search（新聞）
+  - 資料：yfinance（歷史 OHLCV）+ TWSE API + Perplexity / Brave / RSS（新聞）
   - 特徵：36 維（技術面 + 籌碼面 + 美股隔夜 + 市場行情）
   - 模型：LightGBM 獨立 1／3／5 交易日模型與時序驗證
   - AI：OpenRouter（多模型可選）新聞情緒分析 + 3 日走勢推估

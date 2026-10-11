@@ -99,6 +99,10 @@ def migrate_from_old_location():
             "auto_retrain_days": 7,
             "default_symbol": "0050.TW",
             "brave_api_key": "",
+            "news_search_provider": "perplexity",
+            "news_search_max_uses": 1,
+            "news_search_context": "medium",
+            "news_search_rss_fallback": True,
             "welcome_shown": False
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:

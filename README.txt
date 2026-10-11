@@ -1,4 +1,4 @@
-台股預測分析系統 v1.7.0
+台股預測分析系統 v1.7.4
 Windows 10 / 11 (64-bit)，需連線取得行情與新聞。
 
 【安裝與更新】
@@ -26,7 +26,13 @@ https://github.com/littleblackmann/stock-predictor/releases/latest
 Claude Opus 5.5、GPT-6 Astra、Gemini 3.8 Flash 等選項。
 更新程式或模型清單不會替換原本選好的模型。可用性及實際費用依帳號與供應商為準。
 新聞 AI 用於解釋新聞，不直接改寫量化機率；找不到新聞時會明確顯示無資料。
-Brave Search Key 為選填，未填時使用 Google News RSS。
+設定 → API 設定 → 新聞搜尋來源：預設 Perplexity，直接共用 OpenRouter Key 和已選 AI 模型，不需另一把 Key。
+每次新聞分析預設最多搜尋 1 次、每次最多 5 筆來源；可選 1～3 次與精簡／標準／詳細資料量。
+Perplexity 搜尋參考費用 US$0.005／次，另計 AI token 費；免費 AI 模型也可能產生搜尋費，以 OpenRouter 實際計費為準。
+同股、同模型、同搜尋設定的成功分析可在 30 分鐘內重用；分析面板會顯示搜尋時間、快取及可點開的來源。
+仍可選 Brave Search（原 Key 保留）或 Google News RSS（不加收搜尋費，AI 分析仍計費）。
+搜尋失敗時預設使用 RSS 備援並顯示原因；可在設定關閉備援。餘額／金鑰異常不重複嘗試 AI 分析。
+未取得可核對來源或分析不完整時，不把 AI 猜測當成近期新聞，新聞不改寫 1／3／5 交易日模型機率。
 
 【紀錄與驗證】
 1、3、5 日紀錄分開保存，同一資料日、目標日和模型版本不重複覆寫。
