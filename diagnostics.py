@@ -30,13 +30,14 @@ def run(output_dir, network=False):
                     index=pd.bdate_range('2023-01-02',periods=len(close)))
     eng=FeatureEngineer();features=eng.build_features(raw,include_latest=True)
     horizons=forecast_frame(features,eng.get_feature_cols(),raw.Close)
+    from data.prediction_summary import describe_prediction
     result={'symbol':'0050.TW · 測試資料','prediction':horizons[0], 'horizons':horizons,
             'eval_metrics':horizons[0]['eval_metrics'],'chart_data':eng.get_chart_data(raw,features),
             'data_date':str(raw.index[-1].date()),'target_date':'2026-10-05',
             'explanations':['時間分段驗證；示範畫面使用合成資料。'],
             'price_info':{'price':100.00,'change':1.2,'change_pct':1.21},
             'sentiment':{'available':False,'reason':'測試模式，未呼叫付費 AI'},
-            'forecast_3d':[{'day':f"{r['horizon']} 交易日 · 10/05",'trend':f"方向不明 · 上漲 {r['up_prob']:.0%}",'confidence':'待驗證','reason':f"回測 {r['eval_metrics']['accuracy']:.0%} / 基準 {r['eval_metrics']['baseline_accuracy']:.0%}"} for r in horizons]}
+            'forecast_3d':[{'day':f"{r['horizon']} 交易日 · 10/05",'trend':f"{describe_prediction(r)[0]} · 上漲 {r['up_prob']:.0%}",'confidence':'觀望' if r['prediction']==-1 else '參考','reason':describe_prediction(r)[1]} for r in horizons]}
     report={'version':get_current_version(),'catalog_count':len(load_catalog()['models']),
             'horizons':[r['horizon'] for r in horizons],'finite_probabilities':all(np.isfinite(r['up_prob']) for r in horizons)}
     if network:

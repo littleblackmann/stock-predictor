@@ -196,12 +196,13 @@ def run_prediction(symbol, force=False, progress=None, include_news=True):
     for item in horizons:
         target = target_session(data_date, item['horizon'], calendar)
         item['target_date'] = target.isoformat()
-        direction = {1: '偏多', 0: '偏空', -1: '方向不明'}[item['prediction']]
+        from data.prediction_summary import describe_prediction
+        direction, reason = describe_prediction(item)
         cards.append({'day': f"{item['horizon']} 交易日 · {target:%m/%d}",
                       'trend': f"{direction} · 上漲 {item['up_prob']:.0%}",
                       'color': {1:'green',0:'red',-1:'yellow'}[item['prediction']],
-                      'confidence': '待驗證' if item['prediction'] == -1 else '參考',
-                      'reason': f"回測 {item['eval_metrics']['accuracy']:.0%} / 基準 {item['eval_metrics']['baseline_accuracy']:.0%}"})
+                      'confidence': '觀望' if item['prediction'] == -1 else '參考',
+                      'reason': f"回測 {item['eval_metrics']['accuracy']:.1%} / 基準 {item['eval_metrics']['baseline_accuracy']:.1%}\n{reason}"})
     sentiment = {'available': False, 'reason': '新聞分析未啟用'}
     if include_news:
         emit(88, "整理新聞分析...")

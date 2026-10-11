@@ -95,9 +95,11 @@ class RecordTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.path=str(Path(self.tmp.name)/'log.csv')
         self.mock=patch('data.prediction_logger.LOG_PATH',self.path);self.mock.start()
+        self.fallback=patch('data.yfinance_adapter.YFinanceAdapter.fetch_chart',return_value=pd.DataFrame())
+        self.fallback.start()
 
     def tearDown(self):
-        self.mock.stop();self.tmp.cleanup()
+        self.fallback.stop();self.mock.stop();self.tmp.cleanup()
 
     def result(self):
         return {'symbol':'0050.TW','data_date':'2026-04-07','created_at':'2026-04-07T17:00:00+08:00',

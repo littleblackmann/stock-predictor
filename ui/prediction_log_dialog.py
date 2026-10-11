@@ -19,7 +19,7 @@ from data.prediction_logger import PredictionLogger
 # ── 背景回填 Worker ────────────────────────────────────────────────
 
 class _BackfillSignals(QObject):
-    finished = Signal(int)   # 回填筆數
+    finished = Signal(object)
 
 
 class _BackfillWorker(QRunnable):
@@ -30,9 +30,14 @@ class _BackfillWorker(QRunnable):
 
     def run(self):
         from resource_budget import background_resources
-        with background_resources():
-            count = PredictionLogger.backfill_actuals()
-        self.signals.finished.emit(count)
+        try:
+            with background_resources():
+                report = PredictionLogger.backfill_actuals(details=True)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('手動回填失敗')
+            report = {'error': '回填失敗：紀錄檔案無法讀寫，請查看日誌後重試。原始紀錄保留。'}
+        self.signals.finished.emit(report)
 
 
 # ── Dialog ────────────────────────────────────────────────────────
@@ -59,13 +64,14 @@ class PredictionLogDialog(QDialog):
         ("期限", "horizon", 55),
         ("狀態", "evaluation_status", 90),
         ("股票",      "symbol",          90),
-        ("預測",      "predicted",       60),
+        ("原始方向",  "predicted",      100),
         ("上漲機率",  "up_prob",         80),
         ("原始機率",  "raw_up_prob",     75),   # 未加 GPT 情緒的模型原始機率（A/B 比對用）
         ("3日走勢",   "gpt_3day",        200),
         ("實際",      "actual",          60),
         ("漲跌%",     "actual_return",   70),
-        ("正確",      "correct",         55),
+        ("機率對照",  "probability_correct", 90),
+        ("方向對錯",  "correct",        120),
     ]
 
     def __init__(self, parent=None):
@@ -129,7 +135,8 @@ class PredictionLogDialog(QDialog):
 
         # 頂部按鈕列
         top = QHBoxLayout()
-        self.lbl_status = QLabel("💡 實際 / 漲跌% / 正確：預測目標日過後由「更新實際結果」自動回填")
+        self.lbl_status = QLabel("💡 收盤 15:00 後更新；機率對照含觀望，方向對錯只評明確訊號。")
+        self.lbl_status.setWordWrap(True)
         self.lbl_status.setStyleSheet("color: #4A6A8A; font-size: 11px;")
         top.addWidget(self.lbl_status, stretch=1)
         self.horizon_filter = QComboBox()
@@ -215,9 +222,16 @@ class PredictionLogDialog(QDialog):
                 except (ValueError,KeyError):
                     shown[key] = '—'
             shown['predicted'] = {'up':'偏多','down':'偏空','uncertain':'方向不明'}.get(row.get('predicted'), '—')
-            shown['evaluation_status'] = {'legacy':'舊版紀錄','pending':'待收盤驗證','final':'已驗證'}.get(row.get('evaluation_status'),'—')
+            legacy = row.get('model_version') == 'legacy'
+            shown['evaluation_status'] = {'legacy':'舊版已回填' if PredictionLogger._has_actual(row) else '舊版待回填',
+                                          'pending':'待收盤驗證','final':'已驗證'}.get(row.get('evaluation_status'),'—')
+            from data.prediction_summary import probability_correct
+            score = probability_correct(row)
+            shown['probability_correct'] = '✓' if score is True else '✗' if score is False else '—'
             shown['actual_return'] = self._format_return(row.get('actual_return',''))
             shown['correct'] = {'True':'✓','False':'✗'}.get(row.get('correct'),'—')
+            if row.get('evaluation_status') == 'final' and row.get('predicted') == 'uncertain':
+                shown['correct'] = '觀望不評分'
             values = [shown.get(key,'') for _,key,_ in self.COLUMNS]
 
             for col_idx, val in enumerate(values):
@@ -228,6 +242,18 @@ class PredictionLogDialog(QDialog):
 
                 # 上色
                 field = self.COLUMNS[col_idx][1]
+                if field == 'probability_correct':
+                    item.setToolTip('以上漲機率 > 50% 判為上漲、< 50% 判為未上漲，對照實際收盤；50% 不評分。\n包含觀望分析，不能視為已驗證的交易訊號；舊版不混入。')
+                    item.setForeground(GREEN if score is True else RED if score is False else GRAY)
+                if field == 'correct':
+                    item.setToolTip('只評分當時明確給出的方向；觀望紀錄不事後改寫方向，請參考「機率對照」。')
+                if field in ('data_date', 'target_date') and legacy:
+                    item.setToolTip('舊版未保存資料日與目標日；回填沿用查詢日前最近交易日／查詢日後首個交易日的推定規則，不納入新版統計。')
+                if field == 'evaluation_status':
+                    detail = getattr(self, '_backfill_report', {}).get('rows', {}).get(row['record_id'])
+                    if detail:
+                        item.setText('資料待補' if '行情' in detail else shown['evaluation_status'])
+                        item.setToolTip(detail)
                 if field == "predicted":
                     # 台灣慣例：上漲=紅、下跌=綠
                     item.setForeground(RED if row.get("predicted") == "up" else (GRAY if row.get("predicted")=="uncertain" else GREEN))
@@ -264,11 +290,13 @@ class PredictionLogDialog(QDialog):
 
     def _update_stats(self):
         stats = PredictionLogger.get_stats(self.horizon_filter.currentData())
+        probability = (f"機率偏向對照：{stats['probability_accuracy']:.1%}（{stats['probability_correct']}/{stats['probability_total']} 筆，含觀望）"
+                       if stats['probability_total'] else '機率偏向對照：尚無已收盤資料')
         if stats["total"] == 0:
-            self.lbl_stats.setText(f"尚無新版已驗證方向訊號；方向不明 {stats['uncertain']} 筆。保留舊紀錄 {stats['legacy_total']} 筆，不混入新版統計。")
+            self.lbl_stats.setText(f"{probability}\n尚無新版已驗證明確方向；觀望 {stats['uncertain']} 筆。舊紀錄 {stats['legacy_total']} 筆另行保留。")
             return
 
-        parts = [f"新版明確方向命中率：{stats['accuracy']:.1%}（{stats['correct']}/{stats['total']} 筆）"]
+        parts = [probability, f"新版明確方向命中率：{stats['accuracy']:.1%}（{stats['correct']}/{stats['total']} 筆）"]
         sym_parts = []
         for sym, sv in sorted(stats["by_symbol"].items()):
             sym_parts.append(f"{sym} {sv['accuracy']:.0%}（{sv['correct']}/{sv['total']}）")
@@ -335,23 +363,20 @@ class PredictionLogDialog(QDialog):
             pool = self._pool
         pool.start(worker)
 
-    def _on_backfill_done(self, count: int):
+    def _on_backfill_done(self, report):
         self.btn_backfill.setEnabled(True)
-        # 重新載入以顯示「資料延遲」標記
+        self._backfill_report = report
+        if report.get('error'):
+            self.lbl_status.setText(report['error'])
+            return
         self._load_table()
-        if count > 0:
-            self.lbl_status.setText(f"✅ 已更新 {count} 筆實際結果")
-        else:
-            # 檢查是否有資料延遲的記錄
-            from data.prediction_logger import PredictionLogger
-            rows = PredictionLogger.load_all()
-            deferred = sum(1 for r in rows if r.get("actual_return") == "資料延遲")
-            if deferred > 0:
-                self.lbl_status.setText(
-                    f"✅ 已是最新，{deferred} 筆因 API 資料延遲暫無法更新（下次啟動會自動重試）"
-                )
-            else:
-                self.lbl_status.setText("✅ 已是最新，所有可回填記錄均已更新")
+        parts = [f"已回填 {report['updated']} 筆（含舊版 {report['updated_legacy']} 筆）"]
+        for key, text in (('waiting', '未到完整收盤'), ('missing_data', '缺少指定日行情'),
+                          ('fetch_failed', '行情取得失敗，請重試'), ('invalid', '日期不完整')):
+            if report[key]:
+                parts.append(f"{text} {report[key]} 筆")
+        self.lbl_status.setText('；'.join(parts))
+        self.lbl_status.setToolTip(self.lbl_status.text())
 
     def _on_trend(self):
         from ui.accuracy_trend_dialog import AccuracyTrendDialog

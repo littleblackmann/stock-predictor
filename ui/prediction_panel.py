@@ -233,6 +233,11 @@ class PredictionPanel(QWidget):
         self.confidence_bar = ConfidenceBar()
         self.confidence_bar.setVisible(False)
         main_layout.addWidget(self.confidence_bar)
+        self.label_direction_reason = QLabel('')
+        self.label_direction_reason.setWordWrap(True)
+        self.label_direction_reason.setStyleSheet('color: #FFBB66; font-size: 13px;')
+        self.label_direction_reason.hide()
+        main_layout.addWidget(self.label_direction_reason)
 
         main_layout.addWidget(self._make_hline())
 
@@ -332,7 +337,8 @@ class PredictionPanel(QWidget):
             text  = f"🟢 偏空\n下跌估計 {down_prob:.1%}"
             color = "#00CC66"
         else:
-            text  = "🟡 暫無明確方向"
+            from data.prediction_summary import describe_prediction
+            text = "🟡 " + describe_prediction(prediction)[0]
             color = "#FFAA44"
 
         self.label_prediction.setText(text)
@@ -342,7 +348,10 @@ class PredictionPanel(QWidget):
 
         # ── 信心等級（動態進度條）──
         confidence = prediction.get("confidence_level", "")
-        confidence_note = prediction.get("confidence_note", "")
+        from data.prediction_summary import describe_prediction
+        confidence_note = '暫觀望，原因如下' if pred_dir == -1 else '歷史優於基準，仍需驗證'
+        self.label_direction_reason.setText(describe_prediction(prediction)[1])
+        self.label_direction_reason.setVisible(pred_dir == -1)
         conviction = abs(up_prob - 0.5) * 100  # 距離 50% 的百分點
         if confidence:
             self.confidence_bar.set_confidence(confidence, confidence_note, conviction)
@@ -477,6 +486,8 @@ class PredictionPanel(QWidget):
         self.label_news_sources.clear()
         self.label_news_sources.hide()
         self.confidence_bar.setVisible(False)
+        self.label_direction_reason.clear()
+        self.label_direction_reason.hide()
         self.shap_bar.set_data([])
 
     # ── 私有方法 ────────────────────────────────────────────────────

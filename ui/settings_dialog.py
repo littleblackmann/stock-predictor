@@ -500,6 +500,12 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._make_section_title("更新日誌"))
 
         changelogs = [
+            {"version": "v1.7.5", "date": "2026-10-12", "changes": [
+                "區分接近五五波與模型偏多／偏空但驗證不足，顯示觀望原因",
+                "新增機率對照，觀望分析也能在收盤後追蹤偏向是否符合實際",
+                "恢復舊版待驗證紀錄回填，推定日期另行標示並備份原始紀錄",
+                "行情空資料或缺日嘗試備援，更新結果顯示待收盤、缺漏與失敗原因",
+            ]},
             {"version": "v1.7.4", "date": "2026-10-11", "changes": [
                 "新增 Perplexity 網路搜尋，共用 OpenRouter Key 與已選 AI 模型",
                 "設定可切換 Perplexity、Brave 或 RSS，調整搜尋次數與資料量",

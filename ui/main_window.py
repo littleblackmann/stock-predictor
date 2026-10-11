@@ -523,7 +523,8 @@ class MainWindow(QMainWindow):
         direction = "上漲" if prediction.get("prediction") == 1 else "下跌"
         prob = up_p if prediction.get("prediction") == 1 else prediction.get("down_prob", 0)
         code = symbol.replace(".TW", "").replace(".TWO", "")
-        self._notify(f"{code} 分析完成", f"目標 {result.get('target_date','')}：" + ("方向不明" if prediction.get("prediction")==-1 else f"{direction}估計 {prob:.1%}"))
+        from data.prediction_summary import describe_prediction
+        self._notify(f"{code} 分析完成", f"目標 {result.get('target_date','')}：" + describe_prediction(prediction)[0])
 
         logger.info(f"UI 更新完成：{symbol}")
 
@@ -554,7 +555,8 @@ class MainWindow(QMainWindow):
         # 更新狀態列
         up_p   = prediction.get("up_prob",  0)
         down_p = prediction.get("down_prob", 0)
-        direction = {1:"🔴 偏多",0:"🟢 偏空",-1:"🟡 方向不明"}.get(prediction.get("prediction"),"方向不明")
+        from data.prediction_summary import describe_prediction
+        direction = describe_prediction(prediction)[0]
         self._show_status(
             f"[{symbol}] 目標 {result.get('target_date','')} — {direction} "
             f"({up_p:.1%} 上 / {down_p:.1%} 下)"
